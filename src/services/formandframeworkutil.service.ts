@@ -1,28 +1,36 @@
-import { Inject, Injectable, OnInit } from '@angular/core';
+import { Inject, Injectable } from '@angular/core';
 import { AppGlobalService } from '@app/services/app-global-service.service';
 import { AppVersion } from '@ionic-native/app-version/ngx';
 import { TranslateService } from '@ngx-translate/core';
-import { Events } from '@ionic/angular';
+import { Events } from '@app/util/events';
 import {
+    CachedItemRequestSourceFrom,
     CategoryTerm,
     FormRequest,
     FormService,
-    FrameworkService,
     FrameworkCategoryCodesGroup,
+    FrameworkService,
     FrameworkUtilService,
     GetFrameworkCategoryTermsRequest,
     GetSystemSettingsRequest,
     OrganizationSearchCriteria,
     Profile,
     ProfileService,
+    SharedPreferences,
     SystemSettings,
     SystemSettingsService,
-    SharedPreferences
+    WebviewSessionProviderConfig,
+    SignInError,
+    FrameworkCategoryCode,
+    ProfileType
 } from 'sunbird-sdk';
 
-import { SystemSettingsIds, ContentFilterConfig, ContentType } from '@app/app/app.constant';
+import { ContentFilterConfig, PreferenceKey, SystemSettingsIds, PrimaryCategory, FormConstant } from '@app/app/app.constant';
+import { map } from 'rxjs/operators';
+import { EventParams } from '@app/app/components/sign-in-card/event-params.interface';
+
 @Injectable()
-export class FormAndFrameworkUtilService implements OnInit {
+export class FormAndFrameworkUtilService {
     contentFilterConfig: Array<any> = [];
     selectedLanguage: string;
     profile: Profile;
@@ -40,8 +48,32 @@ export class FormAndFrameworkUtilService implements OnInit {
         private events: Events
     ) { }
 
-    ngOnInit() {
-        this.selectedLanguage = this.translate.currentLang;
+    async init() {
+        await this.preferences.getString(PreferenceKey.SELECTED_LANGUAGE_CODE).toPromise().then(val => {
+            this.selectedLanguage = val ? val : 'en';
+        });
+        this.invokeUrlRegexFormApi();
+    }
+
+    getWebviewSessionProviderConfig(context: 'login' | 'merge' | 'migrate'): Promise<WebviewSessionProviderConfig> {
+        const request: FormRequest = {
+            from: CachedItemRequestSourceFrom.SERVER,
+            type: 'config',
+            subType: 'login',
+            action: 'get'
+        };
+
+        return this.formService.getForm(request).pipe(
+            map((result) => {
+                const config = result['form']['data']['fields'].find(c => c.context === context);
+
+                if (!config) {
+                    throw new SignInError('SESSION_PROVIDER_CONFIG_NOT_FOUND');
+                }
+
+                return config;
+            })
+        ).toPromise();
     }
 
     /**
@@ -62,6 +94,30 @@ export class FormAndFrameworkUtilService implements OnInit {
                 resolve(libraryFilterConfig);
             }
         });
+    }
+
+    async getDialcodeRegexFormApi(): Promise<string> {
+        const urlRegexConfig = this.appGlobalService.getCachedSupportedUrlRegexConfig();
+        if (!urlRegexConfig || !urlRegexConfig.dialcode) {
+            const regObj = await this.invokeUrlRegexFormApi();
+            if (regObj && regObj.dialcode) {
+                return regObj.dialcode;
+            }
+            return '';
+        }
+        return urlRegexConfig.dialcode;
+    }
+
+    async getDeeplinkRegexFormApi(): Promise<string> {
+        const urlRegexConfig = this.appGlobalService.getCachedSupportedUrlRegexConfig();
+        if (!urlRegexConfig || !urlRegexConfig.identifier) {
+            const regObj = await this.invokeUrlRegexFormApi();
+            if (regObj && regObj.identifier) {
+                return regObj.identifier;
+            }
+            return '';
+        }
+        return urlRegexConfig.identifier;
     }
 
     /**
@@ -85,17 +141,35 @@ export class FormAndFrameworkUtilService implements OnInit {
     }
 
     /**
+     * This method gets the location config.
+     *
+     */
+    getLocationConfig(): Promise<any> {
+        return new Promise((resolve, reject) => {
+            let locationConfig: Array<any> = [];
+
+            // get cached course config
+            locationConfig = this.appGlobalService.getCachedLocationConfig();
+
+            if (locationConfig === undefined || locationConfig.length === 0) {
+                locationConfig = [];
+                this.invokeLocationConfigFormApi(locationConfig, resolve, reject);
+            } else {
+                resolve(locationConfig);
+            }
+        });
+    }
+
+    /**
      * This method checks if the newer version of the available and respectively shows the dialog with relevant contents
      */
     checkNewAppVersion(): Promise<any> {
         return new Promise((resolve, reject) => {
             console.log('checkNewAppVersion Called');
 
-            this.appVersion.getVersionCode()
+            return this.appVersion.getVersionCode()
                 .then((versionCode: any) => {
                     console.log('checkNewAppVersion Current app version - ' + versionCode);
-                    let result: any;
-
                     // form api request
                     const req: FormRequest = {
                         type: 'app',
@@ -103,16 +177,14 @@ export class FormAndFrameworkUtilService implements OnInit {
                         action: 'upgrade'
                     };
                     // form api call
-                    this.formService.getForm(req).toPromise()
+                    return this.formService.getForm(req).toPromise()
                         .then((res: any) => {
                             let fields: Array<any> = [];
                             let ranges: Array<any> = [];
                             let upgradeTypes: Array<any> = [];
-
                             if (res && res.form && res.form.data) {
                                 fields = res.form.data.fields;
-
-                                fields.forEach(element => {
+                                for (const element of fields) {
                                     if (element.language === this.selectedLanguage) {
                                         if (element.range) {
                                             ranges = element.range;
@@ -122,32 +194,33 @@ export class FormAndFrameworkUtilService implements OnInit {
                                             upgradeTypes = element.upgradeTypes;
                                         }
                                     }
-                                });
+                                }
 
                                 if (ranges && ranges.length > 0 && upgradeTypes && upgradeTypes.length > 0) {
-                                    let type: string;
-                                    const forceType = 'force';
-
-                                    ranges.forEach(element => {
-                                        if (versionCode >= element.minVersionCode && versionCode <= element.maxVersionCode) {
-                                            console.log('App needs a upgrade of type - ' + element.type);
-                                            type = element.type;
-
-                                            if (type === forceType) {
-                                                return true; // this is to stop the foreach loop
+                                    const range = ranges.reduce((acc, r) => {
+                                        if (versionCode >= r.minVersionCode && versionCode <= r.maxVersionCode) {
+                                            if (acc && (acc.type === 'force' || acc.type === 'forced')) {
+                                                return acc;
                                             }
+                                            return r;
                                         }
-                                    });
+                                        return acc;
+                                    }, undefined);
 
-                                    upgradeTypes.forEach(upgradeElement => {
-                                        if (type === upgradeElement.type) {
-                                            result = upgradeElement;
-                                        }
-                                    });
+                                    if (!range) {
+                                        resolve(undefined);
+                                        return;
+                                    }
+
+                                    const result = upgradeTypes.find((u) => u.type === range.type);
+                                    result.minVersionCode = range.minVersionCode;
+                                    result.maxVersionCode = range.maxVersionCode;
+                                    result.currentAppVersionCode = versionCode;
+                                    resolve(result);
+                                    return;
                                 }
                             }
-
-                            resolve(result);
+                            resolve(undefined);
                         }).catch((error: any) => {
                             reject(error);
                         });
@@ -204,7 +277,93 @@ export class FormAndFrameworkUtilService implements OnInit {
                 resolve(libraryFilterConfig);
             });
     }
+    /**
+     * Network call to form api to fetch Supported URL regex
+     */
+    invokeUrlRegexFormApi(): Promise<any> {
+        const req: FormRequest = {
+            type: 'config',
+            subType: 'supportedUrlRegex',
+            action: 'get'
+        };
+        return this.formService.getForm(req).toPromise().then((res: any) => {
+            const data = res.form.data.fields;
+            if (res && data.length) {
+                const regObj = {};
+                for (const ele of data) {
+                    regObj[ele.code] = ele.values;
+                }
+                this.appGlobalService.setSupportedUrlRegexConfig(regObj);
+                return regObj;
+            }
+        }).catch((error: any) => {
+            console.error('error while fetching supported url reg ex ', error);
+            return undefined;
+        });
+    }
 
+    /**
+     * Network call to form api
+     */
+    private invokeLocationConfigFormApi(
+        locationConfig: Array<any>,
+        resolve: (value?: any) => void,
+        reject: (reason?: any) => void) {
+
+        const req: FormRequest = {
+            type: 'config',
+            subType: 'location',
+            action: 'get',
+        };
+        // form api call
+        this.formService.getForm(req).toPromise()
+            .then((res: any) => {
+                locationConfig = res.form.data.fields;
+                this.appGlobalService.setLocationConfig(locationConfig);
+                resolve(locationConfig);
+            }).catch((error: any) => {
+                console.log('Error - ' + error);
+                resolve(locationConfig);
+            });
+    }
+
+    async getPdfPlayerConfiguration() {
+        return new Promise((resolve, reject) => {
+            let pdfPlayerConfig;
+            // get cached pdfplayer config
+            pdfPlayerConfig = this.appGlobalService.getPdfPlayerConfiguration();
+
+            if (pdfPlayerConfig === undefined) {
+                pdfPlayerConfig = this.invokePdfPlayerConfiguration(pdfPlayerConfig, resolve, reject);
+            } else {
+                resolve(pdfPlayerConfig);
+            }
+        });
+    }
+
+
+
+
+    // get pdf player enable or disable configuration
+    async invokePdfPlayerConfiguration(
+        pdfPlayerConfig: any,
+        resolve: (value?: any) => void,
+        reject: (reason?: any) => void) {
+        const req: FormRequest = {
+            type: 'config',
+            subType: 'pdfPlayer',
+            action: 'get',
+        };
+        let currentConfiguration;
+        this.formService.getForm(req).toPromise()
+            .then((res: any) => {
+                currentConfiguration = res.form.data; 
+                this.appGlobalService.setpdfPlayerconfiguration(currentConfiguration);
+                resolve(currentConfiguration);
+            }).catch((error: any) => {
+                console.log('Error - ' + error);
+            });
+    }
 
     private setContentFilterConfig(contentFilterConfig: Array<any>) {
         this.contentFilterConfig = contentFilterConfig;
@@ -214,10 +373,10 @@ export class FormAndFrameworkUtilService implements OnInit {
         return this.contentFilterConfig;
     }
 
-    private async invokeContentFilterConfigFormApi(): Promise<any> {
+    public async invokeContentFilterConfigFormApi(): Promise<any> {
         const req: FormRequest = {
             type: 'config',
-            subType: 'content',
+            subType: 'content_v2',
             action: 'filter',
         };
 
@@ -231,6 +390,7 @@ export class FormAndFrameworkUtilService implements OnInit {
                 return error;
             });
     }
+
 
     async getSupportedContentFilterConfig(name): Promise<Array<string>> {
         // get cached library config
@@ -249,21 +409,21 @@ export class FormAndFrameworkUtilService implements OnInit {
         if (contentFilterConfig === undefined || contentFilterConfig.length === 0) {
             switch (name) {
                 case ContentFilterConfig.NAME_LIBRARY:
-                    libraryTabContentTypes = ContentType.FOR_LIBRARY_TAB;
+                    libraryTabContentTypes = PrimaryCategory.FOR_LIBRARY_TAB;
                     break;
                 case ContentFilterConfig.NAME_COURSE:
-                    libraryTabContentTypes = ContentType.FOR_COURSE_TAB;
+                    libraryTabContentTypes = PrimaryCategory.FOR_COURSE_TAB;
                     break;
                 case ContentFilterConfig.NAME_DOWNLOADS:
-                    libraryTabContentTypes = ContentType.FOR_DOWNLOADED_TAB;
+                    libraryTabContentTypes = PrimaryCategory.FOR_DOWNLOADED_TAB;
                     break;
                 case ContentFilterConfig.NAME_DIALCODE:
-                    libraryTabContentTypes = ContentType.FOR_DIAL_CODE_SEARCH;
+                    libraryTabContentTypes = PrimaryCategory.FOR_DIAL_CODE_SEARCH;
                     break;
             }
         } else {
             for (const field of contentFilterConfig) {
-                if (field.name === name && field.code === ContentFilterConfig.CODE_CONTENT_TYPE) {
+                if (field.name === name && field.code === ContentFilterConfig.CODE_PRIMARY_CATEGORY) {
                     libraryTabContentTypes = field.values;
                     break;
                 }
@@ -280,8 +440,8 @@ export class FormAndFrameworkUtilService implements OnInit {
      * @param profileRes : profile details of logged in user which can be obtained using userProfileService.getUserProfileDetails
      * @param profileData : Local profile of current user
      */
-    updateLoggedInUser(profileRes, profileData) {
-        return new Promise((resolve, reject) => {
+    updateLoggedInUser(profileRes, profileData, eventParams?: EventParams) {
+        return new Promise(async (resolve, reject) => {
             const profile = {
                 board: [],
                 grade: [],
@@ -295,32 +455,33 @@ export class FormAndFrameworkUtilService implements OnInit {
                 let keysLength = 0;
                 profile.syllabus = [profileRes.framework.id[0]];
                 for (const categoryKey in profileRes.framework) {
-                    if (profileRes.framework[categoryKey].length) {
+                    if (profileRes.framework[categoryKey].length
+                        && FrameworkCategoryCodesGroup.DEFAULT_FRAMEWORK_CATEGORIES.includes(categoryKey as FrameworkCategoryCode)) {
                         const request: GetFrameworkCategoryTermsRequest = {
                             currentCategoryCode: categoryKey,
                             language: this.translate.currentLang,
                             requiredCategories: FrameworkCategoryCodesGroup.DEFAULT_FRAMEWORK_CATEGORIES,
-                            frameworkId: profileRes.framework.id ? profileRes.framework.id[0] : undefined
+                            frameworkId: (profileRes.framework && profileRes.framework.id) ? profileRes.framework.id[0] : undefined
                         };
-                        this.frameworkUtilService.getFrameworkCategoryTerms(request).toPromise()
-                            .then((categoryList: CategoryTerm[]) => {
+                        await this.frameworkUtilService.getFrameworkCategoryTerms(request).toPromise()
+                            .then((categoryTerms: CategoryTerm[]) => {
                                 keysLength++;
                                 profileRes.framework[categoryKey].forEach(element => {
                                     if (categoryKey === 'gradeLevel') {
-                                        const codeObj = categoryList.find((category) => category.name === element);
+                                        const codeObj = categoryTerms.find((category) => category.name === element);
                                         if (codeObj) {
                                             profile['grade'].push(codeObj.code);
                                             profile['gradeValue'][codeObj.code] = element;
                                         }
                                     } else {
-                                        const codeObj = categoryList.find((category) => category.name === element);
+                                        const codeObj = categoryTerms.find((category) => category.name === element);
                                         if (codeObj) {
                                             profile[categoryKey].push(codeObj.code);
                                         }
                                     }
                                 });
                                 if (categoryKeysLen === keysLength) {
-                                    this.updateProfileInfo(profile, profileData)
+                                    this.updateProfileInfo(profile, profileData, eventParams)
                                         .then((response) => {
                                             resolve(response);
                                         });
@@ -329,7 +490,7 @@ export class FormAndFrameworkUtilService implements OnInit {
                             .catch(err => {
                                 keysLength++;
                                 if (categoryKeysLen === keysLength) {
-                                    this.updateProfileInfo(profile, profileData)
+                                    this.updateProfileInfo(profile, profileData, eventParams)
                                         .then((response) => {
                                             resolve(response);
                                         });
@@ -337,6 +498,12 @@ export class FormAndFrameworkUtilService implements OnInit {
                             });
                     } else {
                         keysLength++;
+                        if (categoryKeysLen === keysLength) {
+                            this.updateProfileInfo(profile, profileData, eventParams)
+                                .then((response) => {
+                                    resolve(response);
+                                });
+                        }
                     }
                 }
             } else {
@@ -345,7 +512,7 @@ export class FormAndFrameworkUtilService implements OnInit {
         });
     }
 
-    updateProfileInfo(profile, profileData) {
+    updateProfileInfo(profile, profileData, eventParams?: EventParams) {
         return new Promise((resolve, reject) => {
             const req: Profile = {
                 syllabus: profile.syllabus,
@@ -367,10 +534,9 @@ export class FormAndFrameworkUtilService implements OnInit {
             this.profileService.updateProfile(req).toPromise()
                 .then((res: any) => {
                     const updateProfileRes = res;
-                    this.events.publish('refresh:loggedInProfile');
-                    if (updateProfileRes.board && updateProfileRes.grade && updateProfileRes.medium &&
-                        updateProfileRes.board.length && updateProfileRes.grade.length
-                        && updateProfileRes.medium.length
+                    this.events.publish('refresh:loggedInProfile', eventParams);
+                    if (updateProfileRes.grade && updateProfileRes.medium &&
+                        updateProfileRes.grade.length && updateProfileRes.medium.length
                     ) {
                         resolve({ status: true });
                     } else {
@@ -401,10 +567,11 @@ export class FormAndFrameworkUtilService implements OnInit {
 
             // if data not cached
             if (rootOrganizations === undefined || rootOrganizations.length === 0) {
-                const searchOrganizationReq: OrganizationSearchCriteria<{ any }> = {
+                const searchOrganizationReq: OrganizationSearchCriteria<{ hashTagId: string; orgName: string; slug: string; }> = {
                     filters: {
                         isRootOrg: true
-                    }
+                    },
+                    fields: ['hashTagId', 'orgName', 'slug']
                 };
                 rootOrganizations = await this.frameworkService.searchOrganization(searchOrganizationReq).toPromise();
                 console.log('rootOrganizations', rootOrganizations);
@@ -478,5 +645,115 @@ export class FormAndFrameworkUtilService implements OnInit {
                     reject(err);
                 });
         });
+    }
+
+    async getTenantSpecificMessages(rootOrgId) {
+        return new Promise((resolve, reject) => {
+            const req: FormRequest = {
+                type: 'user',
+                subType: 'externalIdVerification',
+                action: 'onboarding',
+                rootOrgId,
+                from: CachedItemRequestSourceFrom.SERVER,
+            };
+            this.formService.getForm(req).toPromise()
+                .then((res: any) => {
+                    const data = res.form.data.fields;
+                    if (data && data.length) {
+                        resolve(data);
+                    }
+                }).catch((error: any) => {
+                    reject(error);
+                    console.error('error while fetching dial code reg ex ', error);
+                });
+        });
+    }
+
+    // get the required webview version
+    getWebviewConfig() {
+        return new Promise((resolve, reject) => {
+            const req: FormRequest = {
+                type: 'config',
+                subType: 'webview_version',
+                action: 'get',
+            };
+            // form api call
+            this.formService.getForm(req).toPromise()
+                .then((res: any) => {
+                    if (res.form && res.form.data && res.form.data.fields[0].version) {
+                        resolve(parseInt(res.form.data.fields[0].version, 10));
+                    } else {
+                        resolve(54);
+                    }
+                }).catch((error: any) => {
+                    reject(error);
+                });
+        });
+    }
+
+    async getFormConfig() {
+        const req: FormRequest = {
+            type: 'dynamicform',
+            subType: 'support_v2',
+            action: 'get',
+            component: 'app'
+        };
+        return (await this.formService.getForm(req).toPromise() as any).form.data.fields;
+    }
+
+    async getStateContactList() {
+        const req: FormRequest = {
+            type: 'form',
+            subType: 'boardContactInfo',
+            action: 'get',
+            component: 'app'
+        };
+        return (await this.formService.getForm(req).toPromise() as any).form.data.fields;
+    }
+
+    async getContentRequestFormConfig() {
+        const req: FormRequest = {
+            type: 'dynamicForm',
+            subType: 'contentRequest',
+            action: 'submit',
+            component: 'app'
+        };
+        return (await this.formService.getForm(req).toPromise() as any).form.data.fields;
+    }
+
+    async getConsentFormConfig() {
+        const req: FormRequest = {
+            type: 'dynamicForm',
+            subType: 'consentDeclaration_v2',
+            action: 'submit',
+            component: 'app'
+        };
+        return (await this.formService.getForm(req).toPromise() as any).form.data.fields;
+    }
+
+    async getNotificationFormConfig() {
+        const req: FormRequest = {
+            type: 'config',
+            subType: 'notification',
+            action: 'get',
+            component: 'app'
+        };
+        return (await this.formService.getForm(req).toPromise() as any).form.data.fields;
+    }
+
+    async getBoardAliasName() {
+        const formRequest: FormRequest = {
+            type: 'config',
+            subType: 'boardAlias',
+            action: 'get',
+            component: 'app'
+        };
+        return (await this.formService.getForm(formRequest).toPromise() as any).form.data.fields;
+    }
+
+    async getFormFields(formRequest: FormRequest, rootOrgId?: string) {
+        formRequest.rootOrgId = rootOrgId || '*' ;
+        const formData  = await this.formService.getForm(formRequest).toPromise() as any;
+        return  (formData && formData.form && formData.form.data && formData.form.data.fields) || [];
     }
 }

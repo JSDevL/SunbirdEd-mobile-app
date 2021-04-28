@@ -1,17 +1,19 @@
+import { TextbookTocService } from './../collection-detail-etb/textbook-toc-service';
 import { CommonUtilService } from './../../services/common-util.service';
-import { Component, Inject, NgZone, OnDestroy, ViewChild } from '@angular/core';
-import { AlertController, Events, NavController, NavParams, Platform, PopoverController } from '@ionic/angular';
-import { ContentDetailsPage } from '../content-details/content-details.page';
-import { EnrolledCourseDetailsPage } from '../enrolled-course-details-page/enrolled-course-details-page';
-import { ContentType, MimeType, RouterLinks } from '../../app/app.constant';
-import { CollectionDetailsPage } from '../collection-details/collection-details.page';
+import {
+  Component, Inject, NgZone, OnDestroy,
+  ViewChild, ElementRef
+} from '@angular/core';
+import {
+  MimeType,
+  RouterLinks, EventTopics
+} from '../../app/app.constant';
 import { TranslateService } from '@ngx-translate/core';
 import { AppGlobalService } from '../../services/app-global-service.service';
 import { TelemetryGeneratorService } from '../../services/telemetry-generator.service';
 import find from 'lodash/find';
 import each from 'lodash/each';
-import map from 'lodash/map';
-import { ProfileSettingsPage } from '../profile-settings/profile-settings.page';
+import { IonContent as iContent } from '@ionic/angular';
 import {
   ChildContentRequest,
   Content,
@@ -27,30 +29,38 @@ import {
   DownloadProgress,
   EventsBusEvent,
   EventsBusService,
-  Framework,
-  FrameworkCategoryCodesGroup,
-  FrameworkDetailsRequest,
   FrameworkService,
   FrameworkUtilService,
   GetAllProfileRequest,
-  GetSuggestedFrameworksRequest,
   MarkerType,
   NetworkError,
   PlayerService,
   Profile,
   ProfileService,
-  TelemetryObject
+  TelemetryObject,
+  AuditState,
+  TrackingEnabled
 } from 'sunbird-sdk';
-import { Subscription } from 'rxjs/Subscription';
-import { Environment, ImpressionType, InteractSubtype, InteractType, PageId } from '../../services/telemetry-constants';
-import { TabsPage } from '../tabs/tabs.page';
-import { PlayerPage } from '../player/player.page';
+import { Subscription } from 'rxjs';
+import {
+  Environment, ImpressionType, InteractSubtype, InteractType,
+  PageId, CorReleationDataType, Mode, ObjectType,
+  AuditType, ImpressionSubtype
+} from '../../services/telemetry-constants';
 import { CanvasPlayerService } from '../../services/canvas-player.service';
 import { File } from '@ionic-native/file/ngx';
 import { AppHeaderService } from '../../services/app-header.service';
-import { CollectionDetailEtbPage } from '../collection-detail-etb/collection-detail-etb.page';
 import { Location } from '@angular/common';
 import { NavigationExtras, Router } from '@angular/router';
+import { Platform, NavController } from '@ionic/angular';
+import { Events } from '@app/util/events';
+import { RatingHandler } from '@app/services/rating/rating-handler';
+import { ContentPlayerHandler } from '@app/services/content/player/content-player-handler';
+import { map } from 'rxjs/operators';
+import { ContentUtil } from '@app/util/content-util';
+import { UtilityService } from '@app/services';
+import { NavigationService } from '@app/services/navigation-handler.service';
+import {ContentInfo} from '@app/services/content/content-info';
 declare const cordova;
 
 @Component({
@@ -59,7 +69,7 @@ declare const cordova;
   styleUrls: ['./qrcoderesult.page.scss'],
 })
 export class QrcoderesultPage implements OnDestroy {
-
+  @ViewChild('stickyPillsRef', { static: false }) stickyPillsRef: ElementRef;
   unregisterBackButton: any;
   /**
    * To hold identifier
@@ -79,7 +89,7 @@ export class QrcoderesultPage implements OnDestroy {
   /**
    * Contains card data of previous state
    */
-  content: Content;
+  content: any;
 
   /**
    * Contains Parent Content Details
@@ -96,7 +106,7 @@ export class QrcoderesultPage implements OnDestroy {
   shouldGenerateEndTelemetry = false;
   source = '';
   results: Array<any> = [];
-  defaultImg: string;
+  defaultImg = this.commonUtilService.convertFileSrc('assets/imgs/ic_launcher.png');
   parents: Array<any> = [];
   paths: Array<any> = [];
   categories: Array<any> = [];
@@ -107,44 +117,52 @@ export class QrcoderesultPage implements OnDestroy {
   showLoading: boolean;
   isDownloadStarted: boolean;
   userCount = 0;
-  /**
-   * To hold previous state data
-   */
   cardData: any;
-  // migration-TODO
-  // @ViewChild(Navbar) navBar: any;
   downloadProgress: any = 0;
   isUpdateAvailable: boolean;
   eventSubscription: Subscription;
   headerObservable: any;
   navData: any;
+  backToPreviusPage = true;
+  isProfileUpdated: boolean;
+  isQrCodeLinkToContent: any;
+  childrenData?: Array<any>;
+  stckyUnitTitle?: string;
+  stckyParent: any;
+  latestParents: Array<any> = [];
+  stckyindex: string;
+  chapterFirstChildId: string;
+  showSheenAnimation = true;
+  @ViewChild(iContent, { static: false }) ionContent: iContent;
+  onboarding = false;
+  dialCode: string;
 
   constructor(
     @Inject('CONTENT_SERVICE') private contentService: ContentService,
     @Inject('PROFILE_SERVICE') private profileService: ProfileService,
-    // public navCtrl: NavController,
-    // public navParams: NavParams,
-    public zone: NgZone,
-    public translate: TranslateService,
-    public platform: Platform,
-    private telemetryGeneratorService: TelemetryGeneratorService,
-    private alertCtrl: AlertController,
-    public appGlobalService: AppGlobalService,
-    private events: Events,
-    private popOverCtrl: PopoverController,
-    public commonUtilService: CommonUtilService,
     @Inject('FRAMEWORK_SERVICE') private frameworkService: FrameworkService,
     @Inject('FRAMEWORK_UTIL_SERVICE') private frameworkUtilService: FrameworkUtilService,
     @Inject('EVENTS_BUS_SERVICE') private eventsBusService: EventsBusService,
     @Inject('PLAYER_SERVICE') private playerService: PlayerService,
+    public zone: NgZone,
+    public translate: TranslateService,
+    public platform: Platform,
+    private telemetryGeneratorService: TelemetryGeneratorService,
+    public appGlobalService: AppGlobalService,
+    private events: Events,
+    public commonUtilService: CommonUtilService,
     private canvasPlayerService: CanvasPlayerService,
     private location: Location,
     private file: File,
     private headerService: AppHeaderService,
-    private router: Router
+    private navService: NavigationService,
+    private router: Router,
+    private navCtrl: NavController,
+    private ratingHandler: RatingHandler,
+    private contentPlayerHandler: ContentPlayerHandler,
+    private textbookTocService: TextbookTocService
   ) {
     this.getNavData();
-    this.defaultImg = 'assets/imgs/ic_launcher.png';
   }
 
   getNavData() {
@@ -158,16 +176,44 @@ export class QrcoderesultPage implements OnDestroy {
    * Ionic life cycle hook
    */
   ionViewWillEnter(): void {
+    if (this.textbookTocService.textbookIds.unit) {
+      this.chapterFirstChildId = '';
+      this.getFirstChildOfChapter(this.textbookTocService.textbookIds.unit);
+      if (this.chapterFirstChildId) {
+        setTimeout(() => {
+          if (document.getElementById(this.chapterFirstChildId)) {
+            this.ionContent.getScrollElement().then((v) => {
+              v.scrollTo({
+                top: document.getElementById(this.chapterFirstChildId).offsetTop - 50,
+                left: 0,
+                behavior: 'smooth'
+              });
+            });
+            this.textbookTocService.resetTextbookIds();
+          }
+        }, 100);
+      }
+    }
     this.headerService.hideHeader();
     this.content = this.navData.content;
     this.corRelationList = this.navData.corRelation;
     this.shouldGenerateEndTelemetry = this.navData.shouldGenerateEndTelemetry;
     this.source = this.navData.source;
     this.isSingleContent = this.navData.isSingleContent;
-
+    this.onboarding = this.navData.onboarding;
+    this.dialCode = this.navData.dialCode;
     // check for parent content
     this.parentContent = this.navData.parentContent;
+    this.isProfileUpdated = this.navData.isProfileUpdated;
     this.searchIdentifier = this.content.identifier;
+    this.isQrCodeLinkToContent = this.navData.isQrCodeLinkToContent;
+    this.telemetryGeneratorService.generateImpressionTelemetry(
+      ImpressionType.PAGE_REQUEST, '',
+      PageId.QR_CONTENT_RESULT,
+      this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+      '', '', '', undefined,
+      this.corRelationList
+    );
 
     if (this.parentContent) {
       this.isParentContentAvailable = true;
@@ -176,12 +222,64 @@ export class QrcoderesultPage implements OnDestroy {
       this.isParentContentAvailable = false;
       this.identifier = this.content.identifier;
     }
-    this.setContentDetails(this.identifier, true);
-    this.getChildContents();
+    if (this.backToPreviusPage) {
+      if (this.navData.isAvailableLocally) {
+        this.getChildContents();
+      } else {
+        this.telemetryGeneratorService.generatefastLoadingTelemetry(
+          InteractSubtype.FAST_LOADING_INITIATED,
+          PageId.DIAL_CODE_SCAN_RESULT,
+          undefined,
+          undefined,
+          undefined,
+          this.corRelationList
+        );
+        const getContentHeirarchyRequest: ContentDetailRequest = {
+          contentId: this.identifier
+        };
+        this.contentService.getContentHeirarchy(getContentHeirarchyRequest).toPromise()
+          .then((content: Content) => {
+            this.showSheenAnimation = false;
+            this.childrenData = content.children;
+            this.parents.splice(0, this.parents.length);
+            this.parents.push(content);
+            this.results = [];
+            this.findContentNode(content);
+            this.telemetryGeneratorService.generatefastLoadingTelemetry(
+              InteractSubtype.FAST_LOADING_FINISHED,
+              PageId.DIAL_CODE_SCAN_RESULT,
+              undefined,
+              undefined,
+              undefined,
+              this.corRelationList
+            );
+            if (this.results && this.results.length === 1 &&
+              !(this.results[0].contentData.trackable && this.results[0].contentData.trackable.enabled === TrackingEnabled.YES)) {
+              this.backToPreviusPage = false;
+              this.events.unsubscribe(EventTopics.PLAYER_CLOSED);
+              this.navCtrl.navigateForward([RouterLinks.CONTENT_DETAILS], {
+                state: {
+                  content: this.results[0],
+                  isSingleContent: this.isSingleContent,
+                  resultsSize: this.results.length,
+                  corRelation: this.corRelationList,
+                  onboarding: this.onboarding,
+                  source: this.source
+                }
+              });
+            }
+          }).catch((err) => {
+            this.showSheenAnimation = false;
+          });
+        // this.importContentInBackground([this.identifier], false);
+      }
+      this.backToPreviusPage = false;
+    }
     this.unregisterBackButton = this.platform.backButton.subscribeWithPriority(10, () => {
       this.handleBackButton(InteractSubtype.DEVICE_BACK_CLICKED);
       this.unregisterBackButton.unsubscribe();
     });
+    this.generateNewImpressionEvent(this.dialCode);
     this.subscribeSdkEvent();
     this.headerObservable = this.headerService.headerEventEmitted$.subscribe(eventName => {
       this.handleHeaderEvents(eventName);
@@ -192,10 +290,21 @@ export class QrcoderesultPage implements OnDestroy {
     this.telemetryGeneratorService.generateImpressionTelemetry(ImpressionType.VIEW, '',
       PageId.DIAL_CODE_SCAN_RESULT,
       !this.appGlobalService.isProfileSettingsCompleted ? Environment.ONBOARDING : this.appGlobalService.getPageIdForTelemetry());
-    // // migration-TODO
-    // this.navBar.backButtonClick = () => {
-    //   this.handleBackButton(InteractSubtype.NAV_BACK_CLICKED);
-    // };
+
+    if (this.corRelationList && this.corRelationList.length) {
+      this.corRelationList.push({
+        id: this.content.children ? this.content.children.length.toString() : '0',
+        type: CorReleationDataType.COUNT_CONTENT
+      });
+    }
+    this.telemetryGeneratorService.generatePageLoadedTelemetry(
+      PageId.QR_CONTENT_RESULT,
+      this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+      this.content.identifier,
+      ObjectType.CONTENT,
+      undefined, undefined,
+      this.corRelationList
+    );
 
     if (!AppGlobalService.isPlayerLaunched) {
       this.calculateAvailableUserCount();
@@ -205,7 +314,6 @@ export class QrcoderesultPage implements OnDestroy {
 
   ionViewWillLeave() {
     this.headerObservable.unsubscribe();
-    // Unregister the custom back button action for this page
     if (this.unregisterBackButton) {
       this.unregisterBackButton.unsubscribe();
     }
@@ -216,42 +324,70 @@ export class QrcoderesultPage implements OnDestroy {
   }
 
   ngOnDestroy() {
+    this.textbookTocService.resetTextbookIds();
     if (this.eventSubscription) {
       this.eventSubscription.unsubscribe();
     }
   }
 
-  handleBackButton(clickSource) {
+  async handleBackButton(clickSource?) {
+    this.telemetryGeneratorService.generateBackClickedNewTelemetry(
+      clickSource === InteractSubtype.DEVICE_BACK_CLICKED ? true : false,
+      this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+      PageId.QR_CONTENT_RESULT
+    );
     this.telemetryGeneratorService.generateInteractTelemetry(
       InteractType.TOUCH,
-      clickSource,
+      clickSource || InteractSubtype.NAV_BACK_CLICKED,
       !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
       PageId.DIAL_CODE_SCAN_RESULT);
     if (this.source === PageId.LIBRARY || this.source === PageId.COURSES || !this.isSingleContent) {
-      this.location.back();
+      this.goBack();
     } else if (this.isSingleContent && this.appGlobalService.isProfileSettingsCompleted) {
-      const navigationExtras: NavigationExtras = { state: { loginMode: 'guest' } };
-      this.router.navigate([`/${RouterLinks.TABS}`], navigationExtras);
-    } else if (this.appGlobalService.isGuestUser && this.isSingleContent && !this.appGlobalService.isProfileSettingsCompleted) {
-      const navigationExtras: NavigationExtras = { state: { isCreateNavigationStack: false, hideBackButton: true } };
+      if (await this.commonUtilService.isDeviceLocationAvailable()) {
+        this.navCtrl.pop();
+        const navigationExtras: NavigationExtras = { state: { loginMode: 'guest' }, replaceUrl: true };
+        this.router.navigate([`/${RouterLinks.TABS}`], navigationExtras);
+      } else {
+        const navigationExtras: NavigationExtras = {
+          state: {
+            isShowBackButton: false
+          }
+        };
+        this.navCtrl.navigateForward([`/${RouterLinks.DISTRICT_MAPPING}`], navigationExtras);
+      }
+    } else if (this.appGlobalService.isGuestUser
+      && this.isSingleContent
+      && !this.appGlobalService.isProfileSettingsCompleted) {
+      const navigationExtras: NavigationExtras = {
+        state: {
+          isCreateNavigationStack: false,
+          hideBackButton: true,
+          showFrameworkCategoriesMenu: true
+        }
+      };
       this.router.navigate([`/${RouterLinks.PROFILE_SETTINGS}`], navigationExtras);
     } else {
-
-      this.location.back();
+      this.goBack();
     }
   }
 
   getChildContents() {
+    this.showSheenAnimation = false;
     const request: ChildContentRequest = { contentId: this.identifier, hierarchyInfo: [] };
+    this.profile = this.appGlobalService.getCurrentUser();
     this.contentService.getChildContents(
       request).toPromise()
-      .then((data: Content) => {
+      .then(async (data: Content) => {
+        console.log('getChildContents', data);
+        if (data && data.contentData) {
+          this.childrenData = data.children;
+        }
+
         this.parents.splice(0, this.parents.length);
         this.parents.push(data);
         this.results = [];
-        this.profile = this.appGlobalService.getCurrentUser();
         const contentData = data.contentData;
-        this.checkProfileData(contentData, this.profile);
         this.findContentNode(data);
 
         if (this.results && this.results.length === 0) {
@@ -259,13 +395,39 @@ export class QrcoderesultPage implements OnDestroy {
             '',
             PageId.DIAL_LINKED_NO_CONTENT,
             Environment.HOME);
-          this.commonUtilService.showContentComingSoonAlert(this.source);
-          this.location.back();
-
+          if (this.isProfileUpdated) {
+            if (!await this.commonUtilService.isDeviceLocationAvailable()) {
+              const navigationExtras: NavigationExtras = {
+                state: {
+                  isShowBackButton: false
+                }
+              };
+              this.navCtrl.navigateForward([`/${RouterLinks.DISTRICT_MAPPING}`], navigationExtras);
+            } else {
+              this.navCtrl.navigateBack([RouterLinks.TABS]);
+            }
+            this.commonUtilService.showContentComingSoonAlert(this.source, data, this.dialCode);
+          } else {
+            this.commonUtilService.showContentComingSoonAlert(this.source, data, this.dialCode);
+            window.history.go(-2);
+          }
+        } else if (this.results && this.results.length === 1 &&
+          !(this.results[0].contentData.trackable && this.results[0].contentData.trackable.enabled === TrackingEnabled.YES)) {
+          this.backToPreviusPage = false;
+          this.events.unsubscribe(EventTopics.PLAYER_CLOSED);
+          this.navCtrl.navigateForward([RouterLinks.CONTENT_DETAILS], {
+            state: {
+              content: this.results[0],
+              isSingleContent: this.isSingleContent,
+              resultsSize: this.results.length,
+              corRelation: this.corRelationList,
+              onboarding: this.onboarding
+            }
+          });
         }
-
       })
-      .catch(() => {
+      .catch((err) => {
+        console.log('err1-->', err);
         this.zone.run(() => {
           this.showChildrenLoader = false;
         });
@@ -281,23 +443,23 @@ export class QrcoderesultPage implements OnDestroy {
       local: true,
       server: false
     };
-    this.profileService.getAllProfiles(profileRequest)
-      .map((profiles) => profiles.filter((profile) => !!profile.handle))
-      .subscribe(profiles => {
-        if (profiles) {
-          this.userCount = profiles.length;
-        }
-        if (this.appGlobalService.isUserLoggedIn()) {
-          this.userCount += 1;
-        }
-      }, () => {
-      });
+    this.profileService.getAllProfiles(profileRequest).pipe(
+      map((profiles) => profiles.filter((profile) => !!profile.handle))
+    ).subscribe(profiles => {
+      if (profiles) {
+        this.userCount = profiles.length;
+      }
+      if (this.appGlobalService.isUserLoggedIn()) {
+        this.userCount += 1;
+      }
+    }, () => {
+    });
   }
 
   /**
    * Play content
    */
-  playContent(content: Content) {
+  playContent(content: Content, isStreaming: boolean, contentInfo?: ContentInfo) {
     const extraInfoMap = { hierarchyInfo: [] };
     if (this.cardData && this.cardData.hierarchyInfo) {
       extraInfoMap.hierarchyInfo = this.cardData.hierarchyInfo;
@@ -314,142 +476,113 @@ export class QrcoderesultPage implements OnDestroy {
       .then(() => {
       }).catch(() => {
       });
-    const request: any = {};
-    request.streaming = true;
     AppGlobalService.isPlayerLaunched = true;
     const values = new Map();
-    values['isStreaming'] = request.streaming;
-    const identifier = content.identifier;
-    let telemetryObject: TelemetryObject;
-    const objectType = this.telemetryGeneratorService.isCollection(content.mimeType) ? content.contentType : ContentType.RESOURCE;
-    telemetryObject = new TelemetryObject(identifier, objectType, undefined);
-    this.telemetryGeneratorService.generateInteractTelemetry(InteractType.TOUCH,
-      InteractSubtype.CONTENT_PLAY,
-      !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
-      PageId.DIAL_CODE_SCAN_RESULT,
-      telemetryObject,
-      values,
-      undefined,
-      this.corRelationList);
-    this.openPlayer(content, request);
+    values['isStreaming'] = isStreaming;
+    const localContentInfo: ContentInfo = {
+      telemetryObject: ContentUtil.getTelemetryObject(content),
+      rollUp: ContentUtil.generateRollUp(content.hierarchyInfo, content.identifier),
+      correlationList: this.corRelationList,
+      hierachyInfo: content.hierarchyInfo,
+      course: undefined
+    };
+    this.interactEventForPlayAndDownload(content, true);
     this.telemetryGeneratorService.generateInteractTelemetry(
       InteractType.TOUCH,
       content.isAvailableLocally ? InteractSubtype.PLAY_FROM_DEVICE : InteractSubtype.PLAY_ONLINE,
-      !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : this.appGlobalService.getPageIdForTelemetry(),
+      !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
       PageId.DIAL_CODE_SCAN_RESULT,
-      telemetryObject,
+      ContentUtil.getTelemetryObject(content),
       undefined,
       undefined,
       this.corRelationList);
+    this.contentPlayerHandler.launchContentPlayer(content,
+        isStreaming,
+        false,
+        contentInfo ? contentInfo : localContentInfo,
+        false,
+        false);
   }
 
-  playOnline(content) {
-    const identifier = content.identifier;
-    let telemetryObject: TelemetryObject;
-    const objectType = this.telemetryGeneratorService.isCollection(content.mimeType) ? content.contentType : ContentType.RESOURCE;
-    telemetryObject = new TelemetryObject(identifier, objectType, undefined);
-
+  playOnline(content, isStreaming: boolean) {
+    const telemetryObject = ContentUtil.getTelemetryObject(content);
     this.telemetryGeneratorService.generateInteractTelemetry(InteractType.TOUCH,
       InteractSubtype.CONTENT_CLICKED,
       !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
       PageId.DIAL_CODE_SCAN_RESULT,
       telemetryObject);
     if (content.contentData.streamingUrl && !content.isAvailableLocally) {
-      this.playContent(content);
+      const rollup = ContentUtil.generateRollUp(content.hierarchyInfo, content.identifier);
+      this.telemetryGeneratorService.generateInteractTelemetry(
+        InteractType.SELECT_CARD, '',
+        this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+        PageId.QR_CONTENT_RESULT,
+        telemetryObject,
+        undefined,
+        rollup,
+        this.corRelationList
+      );
+      const contentInfo: ContentInfo = {
+        telemetryObject,
+        rollUp: rollup,
+        correlationList: this.corRelationList,
+        hierachyInfo: content.hierarchyInfo,
+        course: undefined
+      };
+      this.playContent(content, isStreaming, contentInfo);
     } else {
       this.navigateToDetailsPage(content);
     }
   }
 
-  navigateToDetailsPage(content) {
-    if (content && content.contentData && content.contentData.contentType === ContentType.COURSE) {
-      // this.navCtrl.push(EnrolledCourseDetailsPage, {
-      //   content: content,
-      //   corRelation: this.corRelationList
-      // });
-      this.router.navigate([RouterLinks.ENROLLED_COURSE_DETAILS], {
-        state: {
-          content: content,
-          corRelation: this.corRelationList
-        }
+  navigateToDetailsPage(content, paths?, contentIdentifier?) {
+    this.interactEventForPlayAndDownload(content, false);
+    if (!(content.contentData.downloadUrl) && !paths && ContentUtil.isTrackable(content.contentData) === -1) {
+      this.commonUtilService.showToast('DOWNLOAD_NOT_ALLOWED_FOR_QUIZ');
+      return;
+    }
+    const corRelationList = [...this.corRelationList];
+    if (paths && paths.length) {
+      const rootId = paths[0].identifier ? paths[0].identifier : '';
+      corRelationList.push({
+        id: rootId,
+        type: CorReleationDataType.ROOT_ID
       });
-    } else if (content && content.mimeType === MimeType.COLLECTION) {
-      // this.navCtrl.push(CollectionDetailsEtbPage, {
-      //   content: content,
-      //   corRelation: this.corRelationList
-      // });
-      this.router.navigate([RouterLinks.COLLECTION_DETAIL_ETB], {
-        state: {
-          content: content,
-          corRelation: this.corRelationList
+    }
+    switch (ContentUtil.isTrackable(content)) {
+      case 1:
+        this.navService.navigateToTrackableCollection({
+          content,
+          corRelation: corRelationList
+        });
+        break;
+      case 0:
+        if (paths && paths.length && paths.length >= 2) {
+          this.textbookTocService.setTextbookIds({ rootUnitId: paths[1].identifier, contentId: contentIdentifier });
         }
-      });
-    } else {
-      this.telemetryGeneratorService.generateInteractTelemetry(
-        InteractType.TOUCH,
-        Boolean(content.isAvailableLocally) ? InteractSubtype.PLAY_FROM_DEVICE : InteractSubtype.DOWNLOAD_PLAY_CLICKED,
-        !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
-        PageId.DIAL_CODE_SCAN_RESULT);
-      // this.navCtrl.push(ContentDetailsPage, {
-      //   content: content,
-      //   depth: '1',
-      //   isChildContent: true,
-      //   downloadAndPlay: true,
-      //   corRelation: this.corRelationList
-      // });
-      this.router.navigate([RouterLinks.CONTENT_DETAILS], {
-        state: {
-          content: content,
+        this.navService.navigateToCollection({
+          content,
+          corRelation: corRelationList
+        });
+        break;
+      case -1:
+        this.telemetryGeneratorService.generateInteractTelemetry(
+          InteractType.TOUCH,
+          Boolean(content.isAvailableLocally) ? InteractSubtype.PLAY_FROM_DEVICE : InteractSubtype.DOWNLOAD_PLAY_CLICKED,
+          !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
+          PageId.DIAL_CODE_SCAN_RESULT);
+        this.navService.navigateToContent({
+          content,
           depth: '1',
           isChildContent: true,
           downloadAndPlay: true,
-          corRelation: this.corRelationList
-        }
-      });
+          corRelation: corRelationList,
+          onboarding: this.onboarding,
+          source: this.source
+        });
+        break;
     }
   }
-
-  editProfile(): void {
-    const req: Profile = {
-      board: this.profile.board,
-      grade: this.profile.grade,
-      medium: this.profile.medium,
-      subject: this.profile.subject,
-      uid: this.profile.uid,
-      handle: this.profile.handle,
-      profileType: this.profile.profileType,
-      source: this.profile.source,
-      createdAt: this.profile.createdAt,
-      syllabus: this.profile.syllabus
-    };
-    if (this.profile.grade && this.profile.grade.length > 0) {
-      this.profile.grade.forEach(gradeCode => {
-        for (let i = 0; i < this.gradeList.length; i++) {
-          if (this.gradeList[i].code === gradeCode) {
-            req.gradeValue = this.profile.gradeValue;
-            req.gradeValue[this.gradeList[i].code] = this.gradeList[i].name;
-            break;
-          }
-        }
-      });
-    }
-
-    this.profileService.updateProfile(req).toPromise()
-      .then((res: any) => {
-        if (res.syllabus && res.syllabus.length && res.board && res.board.length
-          && res.grade && res.grade.length && res.medium && res.medium.length) {
-          this.events.publish(AppGlobalService.USER_INFO_UPDATED);
-          this.events.publish('refresh:profile');
-        }
-        this.appGlobalService.guestUserProfile = res;
-        this.telemetryGeneratorService.generateProfilePopulatedTelemetry(PageId.DIAL_CODE_SCAN_RESULT,
-          req, 'auto');
-      })
-      .catch(() => {
-      });
-  }
-
-  /** funtion add elipses to the texts**/
 
   addElipsesInLongText(msg: string) {
     if (this.commonUtilService.translateMessage(msg).length >= 12) {
@@ -459,10 +592,6 @@ export class QrcoderesultPage implements OnDestroy {
     }
   }
 
-  /**
-   * To set content details in local variable
-   * @param {string} identifier identifier of content / course
-   */
   setContentDetails(identifier, refreshContentDetails: boolean) {
     const option: ContentDetailRequest = {
       contentId: identifier,
@@ -472,6 +601,13 @@ export class QrcoderesultPage implements OnDestroy {
     };
     this.contentService.getContentDetails(option).toPromise()
       .then((data: any) => {
+        if (data) {
+          this.content.contentAccess = data.contentAccess ? data.contentAccess : [];
+        }
+
+        this.contentPlayerHandler.setContentPlayerLaunchStatus(false);
+        this.ratingHandler.showRatingPopup(false, this.content, 'automatic', this.corRelationList, null);
+        this.contentPlayerHandler.setLastPlayedContentId('');
       })
       .catch((error: any) => {
       });
@@ -510,8 +646,8 @@ export class QrcoderesultPage implements OnDestroy {
   }
 
   /**
-   * @param categoryList
-   * @param data
+   * categoryList
+   * data
    * @param categoryType
    * return the code of board,medium and subject based on Name
    */
@@ -522,167 +658,6 @@ export class QrcoderesultPage implements OnDestroy {
       return undefined;
     }
   }
-
-  /**
-   * Assigning board, medium, grade and subject to profile
-   */
-
-  setCurrentProfile(index, data) {
-    if (!this.profile.medium || !this.profile.medium.length) {
-      this.profile.medium = [];
-    }
-    /*     if (!this.profile.subject || !this.profile.subject.length) {
-          this.profile.subject = [];
-        }
-     */
-    switch (index) {
-      case 0:
-        this.profile.syllabus = [data.framework];
-        this.profile.board = [data.board];
-        this.setMedium(true, data.medium);
-        // this.profile.subject = [data.subject];
-        this.profile.subject = [];
-        this.setGrade(true, data.gradeLevel);
-        break;
-      case 1:
-        this.profile.board = [data.board];
-        this.setMedium(true, data.medium);
-        // this.profile.subject = [data.subject];
-        this.profile.subject = [];
-        this.setGrade(true, data.gradeLevel);
-        break;
-      case 2:
-        this.setMedium(false, data.medium);
-        break;
-      case 3:
-        this.setGrade(false, data.gradeLevel);
-        break;
-      /*       case 4:
-              this.profile.subject.push(data.subject);
-              break;
-       */
-    }
-    this.editProfile();
-  }
-
-  /**
-   * comparing current profile data with qr result data, If not matching then reset current profile data
-   * @param {object} data
-   * @param {object} profile
-   */
-  checkProfileData(data, profile) {
-
-    if (data && data.framework) {
-
-      const getSuggestedFrameworksRequest: GetSuggestedFrameworksRequest = {
-        language: this.translate.currentLang,
-        requiredCategories: FrameworkCategoryCodesGroup.DEFAULT_FRAMEWORK_CATEGORIES
-      };
-      // Auto update the profile if that board/framework is listed in custodian framework list.
-      this.frameworkUtilService.getActiveChannelSuggestedFrameworkList(getSuggestedFrameworksRequest).toPromise()
-        .then((res: Framework[]) => {
-          let isProfileUpdated = false;
-          res.forEach(element => {
-            // checking whether content data framework Id exists/valid in syllabus list
-            if (data.framework === element.identifier || data.board.indexOf(element.name) !== -1) {
-              isProfileUpdated = true;
-              const frameworkDetailsRequest: FrameworkDetailsRequest = {
-                frameworkId: data.framework,
-                requiredCategories: FrameworkCategoryCodesGroup.DEFAULT_FRAMEWORK_CATEGORIES
-              };
-              this.frameworkService.getFrameworkDetails(frameworkDetailsRequest).toPromise()
-                .then((framework: Framework) => {
-                  this.categories = framework.categories;
-                  this.boardList = find(this.categories, (category) => category.code === 'board').terms;
-                  this.mediumList = find(this.categories, (category) => category.code === 'medium').terms;
-                  this.gradeList = find(this.categories, (category) => category.code === 'gradeLevel').terms;
-                  //                  this.subjectList = find(this.categories, (category) => category.code === 'subject').terms;
-                  if (data.board) {
-                    data.board = this.findCode(this.boardList, data, 'board');
-                  }
-                  if (data.medium) {
-                    if (typeof data.medium === 'string') {
-                      data.medium = [this.findCode(this.mediumList, data, 'medium')];
-                    } else {
-                      data.medium = map(data.medium, (dataMedium) => {
-                        return find(this.mediumList, (medium) => medium.name === dataMedium).code;
-                      });
-                    }
-                  }
-                  /*                   if (data.subject) {
-                                      data.subject = this.findCode(this.subjectList, data, 'subject');
-                                    } */
-                  if (data.gradeLevel && data.gradeLevel.length) {
-                    data.gradeLevel = map(data.gradeLevel, (dataGrade) => {
-                      return find(this.gradeList, (grade) => grade.name === dataGrade).code;
-                    });
-                  }
-                  if (profile && profile.syllabus && profile.syllabus[0] && data.framework === profile.syllabus[0]) {
-                    if (data.board) {
-                      if (profile.board && !(profile.board.length > 1) && data.board === profile.board[0]) {
-                        if (data.medium) {
-                          let existingMedium = false;
-                          for (let i = 0; i < data.medium.length; i++) {
-                            const mediumExists = find(profile.medium, (medium) => {
-                              return medium === data.medium[i];
-                            });
-                            if (!mediumExists) {
-                              break;
-                            }
-                            existingMedium = true;
-                          }
-                          if (!existingMedium) {
-                            this.setCurrentProfile(2, data);
-                          }
-                          if (data.gradeLevel && data.gradeLevel.length) {
-                            let existingGrade = false;
-                            for (let i = 0; i < data.gradeLevel.length; i++) {
-                              const gradeExists = find(profile.grade, (grade) => {
-                                return grade === data.gradeLevel[i];
-                              });
-                              if (!gradeExists) {
-                                break;
-                              }
-                              existingGrade = true;
-                            }
-                            if (!existingGrade) {
-                              this.setCurrentProfile(3, data);
-                            }
-                            /*                             let existingSubject = false;
-                                                        existingSubject = find(profile.subject, (subject) => {
-                                                          return subject === data.subject;
-                                                        });
-                                                        if (!existingSubject) {
-                                                          this.setCurrentProfile(4, data);
-                                                        }
-                             */
-                          }
-                        }
-                      } else {
-                        this.setCurrentProfile(1, data);
-                      }
-                    }
-                  } else {
-                    this.setCurrentProfile(0, data);
-                  }
-                }).catch((err) => {
-                  if (err instanceof NetworkError) {
-                    this.commonUtilService.showToast('ERROR_OFFLINE_MODE');
-                  }
-                });
-
-              return;
-            }
-          });
-        })
-        .catch((err) => {
-          if (err instanceof NetworkError) {
-            this.commonUtilService.showToast('ERROR_OFFLINE_MODE');
-          }
-        });
-    }
-  }
-
   /**
    * Subscribe genie event to get content download progress
    */
@@ -702,12 +677,27 @@ export class QrcoderesultPage implements OnDestroy {
         // Get child content
         // if (res.data && res.data.status === 'IMPORT_COMPLETED' && res.type === 'contentImport') {
         if (event.payload && event.type === ContentEventType.IMPORT_COMPLETED) {
+          const corRelationList: Array<CorrelationData> = [];
+          corRelationList.push({ id: this.dialCode ? this.dialCode : '', type: CorReleationDataType.QR });
+          corRelationList.push({
+            id: this.content.leafNodesCount ? this.content.leafNodesCount.toString() : '0',
+            type: CorReleationDataType.COUNT_NODE
+          });
+          this.telemetryGeneratorService.generatePageLoadedTelemetry(
+            PageId.TEXTBOOK_IMPORT,
+            this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+            this.content.identifier,
+            ObjectType.TEXTBOOK,
+            undefined, undefined,
+            corRelationList
+          );
           this.showLoading = false;
           this.isDownloadStarted = false;
           this.results = [];
           this.parents = [];
           this.paths = [];
           this.getChildContents();
+          this.generateAuditEventForAutoFill();
         }
         // For content update available
         // if (res.data && res.type === 'contentUpdateAvailable' && res.data.identifier === this.identifier) {
@@ -724,31 +714,22 @@ export class QrcoderesultPage implements OnDestroy {
     }) as any;
   }
 
-  /**
-   * Function to get import content api request params
-   *
-   * @param {Array<string>} identifiers contains list of content identifier(s)
-   * @param {boolean} isChild
-   */
-  importContent(identifiers: Array<string>, isChild: boolean, isDownloadAllClicked?) {
-    const option: ContentImportRequest = {
+  importContent(identifiers: Array<string>, isChild: boolean) {
+    const contentImportRequest: ContentImportRequest = {
       contentImportArray: this.getImportContentRequestBody(identifiers, isChild),
       contentStatusArray: [],
       fields: ['appIcon', 'name', 'subject', 'size', 'gradeLevel']
     };
 
     // Call content service
-    this.contentService.importContent(option).toPromise()
+    this.contentService.importContent(contentImportRequest).toPromise()
       .then((data: ContentImportResponse[]) => {
-        this.zone.run(() => {
-          data = data;
-        });
       })
       .catch((error: any) => {
         this.zone.run(() => {
           this.isDownloadStarted = false;
           this.showLoading = false;
-          if (error instanceof NetworkError) {
+          if (NetworkError.isInstance(error)) {
             this.commonUtilService.showToast('NEED_INTERNET_TO_CHANGE');
           } else {
             this.commonUtilService.showToast('UNABLE_TO_FETCH_CONTENT');
@@ -757,12 +738,6 @@ export class QrcoderesultPage implements OnDestroy {
       });
   }
 
-  /**
-   * Function to get import content api request params
-   *
-   * @param {Array<string>} identifiers contains list of content identifier(s)
-   * @param {boolean} isChild
-   */
   getImportContentRequestBody(identifiers: Array<string>, isChild: boolean): Array<ContentImport> {
     const requestParams = [];
     identifiers.forEach((value) => {
@@ -798,7 +773,7 @@ export class QrcoderesultPage implements OnDestroy {
   skipSteps() {
     this.telemetryGeneratorService.generateInteractTelemetry(
       InteractType.TOUCH,
-      InteractSubtype.SKIP_CLICKED,
+      InteractSubtype.NO_QR_CODE_CLICKED,
       !this.appGlobalService.isOnBoardingCompleted ? Environment.ONBOARDING : Environment.HOME,
       PageId.DIAL_CODE_SCAN_RESULT
     );
@@ -808,19 +783,16 @@ export class QrcoderesultPage implements OnDestroy {
       const navigationExtras: NavigationExtras = { state: { loginMode: 'guest' } };
       this.router.navigate([`/${RouterLinks.TABS}`], navigationExtras);
     } else {
-      this.router.navigate([`/${RouterLinks.PROFILE_SETTINGS}`]);
+      this.router.navigate([`/${RouterLinks.PROFILE_SETTINGS}`], { state: { showFrameworkCategoriesMenu: true } });
     }
   }
-
   private showAllChild(content: any) {
     this.zone.run(() => {
-      if (content.children === undefined) {
-        if (content.mimeType !== MimeType.COLLECTION) {
+      if (content.children === undefined || !content.children.length || ContentUtil.isTrackable(content.contentData) === 1) {
+        if (content.mimeType !== MimeType.COLLECTION || ContentUtil.isTrackable(content.contentData) === 1) {
           if (content.contentData.appIcon) {
             if (content.contentData.appIcon.includes('http:') || content.contentData.appIcon.includes('https:')) {
-              if (this.commonUtilService.networkInfo.isNetworkAvailable) {
-                content.contentData.appIcon = content.contentData.appIcon;
-              } else {
+              if (!this.commonUtilService.networkInfo.isNetworkAvailable) {
                 content.contentData.appIcon = this.defaultImg;
               }
             } else if (content.basePath) {
@@ -830,11 +802,14 @@ export class QrcoderesultPage implements OnDestroy {
           this.results.push(content);
 
           const path = [];
+          let latestParent = [];
+          latestParent = this.parents[this.parents.length - 2];
           this.parents.forEach(ele => {
             path.push(ele);
           });
           path.splice(-1, 1);
           this.paths.push(path);
+          this.latestParents.push(latestParent);
         }
         return;
       }
@@ -867,48 +842,158 @@ export class QrcoderesultPage implements OnDestroy {
     return false;
   }
 
-  private openPlayer(playingContent, request) {
-    this.playerService.getPlayerConfig(playingContent, request).subscribe((data) => {
-      data['data'] = {};
-      if (data.metadata.mimeType === 'application/vnd.ekstep.ecml-archive') {
-        if (!request.streaming) {
-          this.file.checkFile(`file://${data.metadata.basePath}/`, 'index.ecml').then((isAvailable) => {
-            this.canvasPlayerService.xmlToJSon(`${data.metadata.basePath}/index.ecml`).then((json) => {
-              data['data'] = json;
-              const navigationExtras: NavigationExtras = { state: { config: data } };
-              this.router.navigate([`/${RouterLinks.PLAYER}`], navigationExtras);
-            }).catch((error) => {
-              console.error('error1', error);
-            });
-          }).catch((err) => {
-            console.error('err', err);
-            this.canvasPlayerService.readJSON(`${data.metadata.basePath}/index.json`).then((json) => {
-              data['data'] = json;
-              const navigationExtras: NavigationExtras = { state: { config: data } };
-              this.router.navigate([`/${RouterLinks.PLAYER}`], navigationExtras);
-            }).catch((e) => {
-              console.error('readJSON error', e);
-            });
-          });
-        } else {
-          const navigationExtras: NavigationExtras = { state: { config: data } };
-          this.router.navigate([`/${RouterLinks.PLAYER}`], navigationExtras);
-        }
-
-      } else {
-        const navigationExtras: NavigationExtras = { state: { config: data } };
-        this.router.navigate([`/${RouterLinks.PLAYER}`], navigationExtras);
-      }
-    });
-  }
   handleHeaderEvents($event) {
     switch ($event.name) {
-      case 'back': this.handleBackButton(InteractSubtype.NAV_BACK_CLICKED);
+      case 'back':
+        this.handleBackButton(InteractSubtype.NAV_BACK_CLICKED);
         break;
     }
   }
 
   goBack() {
-    this.location.back();
+    this.telemetryGeneratorService.generateBackClickedTelemetry(
+      PageId.DIAL_CODE_SCAN_RESULT, Environment.HOME,
+      true, this.content.identifier, this.corRelationList);
+    if (this.isQrCodeLinkToContent) {
+      window.history.go(-2);
+    } else {
+      this.location.back();
+    }
+  }
+
+  openTextbookToc() {
+    this.navService.navigateTo([`/${RouterLinks.COLLECTION_DETAIL_ETB}/${RouterLinks.TEXTBOOK_TOC}`], {
+      childrenData: this.childrenData, parentId: this.identifier,
+      stckyUnitTitle: this.stckyUnitTitle, stckyindex: this.stckyindex,
+      latestParentNodes: this.latestParents
+    });
+    // this.router.navigate([`/${RouterLinks.COLLECTION_DETAIL_ETB}/${RouterLinks.TEXTBOOK_TOC}`],
+    //   {
+    //     state: {
+    //       childrenData: this.childrenData, parentId: this.identifier,
+    //       stckyUnitTitle: this.stckyUnitTitle, stckyindex: this.stckyindex,
+    //       latestParentNodes: this.latestParents
+    //     }
+    //   });
+    const values = new Map();
+    this.telemetryGeneratorService.generateInteractTelemetry(
+      InteractType.TOUCH,
+      InteractSubtype.DROPDOWN_CLICKED,
+      Environment.HOME,
+      PageId.DIAL_CODE_SCAN_RESULT,
+      undefined,
+      values
+    );
+  }
+
+  onScroll(event) {
+    const titles = document.querySelectorAll('[data-sticky-unit]');
+    const currentTitle = Array.from(titles).filter((title) => {
+      return title.getBoundingClientRect().top < 200;
+    }).slice(-1)[0];
+
+    if (currentTitle) {
+      this.zone.run(() => {
+        this.stckyUnitTitle = currentTitle.getAttribute('data-sticky-unit');
+        this.stckyindex = currentTitle.getAttribute('data-index');
+        this.stckyParent = this.latestParents[this.stckyindex].contentData.name;
+      });
+    }
+
+    if (event.scrollTop >= 205) {
+      (this.stickyPillsRef.nativeElement as HTMLDivElement).classList.add('sticky');
+      return;
+    }
+
+    (this.stickyPillsRef.nativeElement as HTMLDivElement).classList.remove('sticky');
+  }
+
+  // when coming back from toc page it has to scroll to the firstcontent of the selected chapter
+  getFirstChildOfChapter(unit) {
+    if (!this.chapterFirstChildId) {
+      if (unit.children === undefined) {
+        if (unit.mimeType !== MimeType.COLLECTION) {
+          this.chapterFirstChildId = unit.identifier;
+        }
+        return;
+      }
+      unit.children.forEach(child => {
+        this.getFirstChildOfChapter(child);
+      });
+    }
+  }
+
+  private interactEventForPlayAndDownload(content, play) {
+    const telemetryObject = ContentUtil.getTelemetryObject(content);
+    if (this.corRelationList && this.corRelationList.length) {
+      this.corRelationList.push({ id: Mode.PLAY, type: CorReleationDataType.MODE });
+      this.corRelationList.push({ id: telemetryObject.type || '', type: CorReleationDataType.TYPE });
+      this.corRelationList.push({
+        id: this.commonUtilService.networkInfo.isNetworkAvailable ?
+          Mode.ONLINE : Mode.OFFLINE, type: InteractSubtype.NETWORK_STATUS
+      });
+    }
+    const rollup = ContentUtil.generateRollUp(content.hierarchyInfo, content.identifier);
+    this.telemetryGeneratorService.generateInteractTelemetry(
+      play ? InteractType.PLAY : InteractType.DOWNLOAD,
+      undefined,
+      this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+      PageId.QR_CONTENT_RESULT,
+      telemetryObject,
+      undefined,
+      rollup,
+      this.corRelationList
+    );
+  }
+
+  generateNewImpressionEvent(dialcode?) {
+    const corRelationList: Array<CorrelationData> = [];
+    if (dialcode) {
+      corRelationList.push({ id: dialcode, type: CorReleationDataType.QR });
+    }
+    this.telemetryGeneratorService.generateImpressionTelemetry(
+      dialcode ? ImpressionType.PAGE_REQUEST : InteractType.PLAY,
+      dialcode ? '' : InteractSubtype.DOWNLOAD,
+      dialcode ? PageId.TEXTBOOK_IMPORT : PageId.QR_CONTENT_RESULT,
+      this.source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+      dialcode ? this.content.identifier : undefined,
+      dialcode ? ObjectType.TEXTBOOK : undefined,
+      undefined, undefined,
+      dialcode ? corRelationList : undefined
+    );
+  }
+
+  private generateAuditEventForAutoFill() {
+    if (this.source === PageId.ONBOARDING_PROFILE_PREFERENCES && this.appGlobalService.isOnBoardingCompleted) {
+      let correlationlist: Array<CorrelationData> = this.populateCData(this.profile.board, CorReleationDataType.BOARD);
+      correlationlist = correlationlist.concat(this.populateCData(this.profile.medium, CorReleationDataType.MEDIUM));
+      correlationlist = correlationlist.concat(this.populateCData(this.profile.grade, CorReleationDataType.CLASS));
+      correlationlist.push({ id: ImpressionSubtype.AUTO, type: CorReleationDataType.FILL_MODE });
+      const rollup = ContentUtil.generateRollUp(this.content.hierarchyInfo, this.content.identifier);
+      this.telemetryGeneratorService.generateAuditTelemetry(
+        Environment.ONBOARDING,
+        AuditState.AUDIT_UPDATED,
+        undefined,
+        AuditType.SET_PROFILE,
+        undefined,
+        undefined,
+        undefined,
+        correlationlist,
+        rollup
+      );
+    }
+  }
+
+  private populateCData(formControllerValues, correlationType): Array<CorrelationData> {
+    const correlationList: Array<CorrelationData> = [];
+    if (formControllerValues) {
+      formControllerValues.forEach((value) => {
+        correlationList.push({
+          id: value,
+          type: correlationType
+        });
+      });
+    }
+    return correlationList;
   }
 }

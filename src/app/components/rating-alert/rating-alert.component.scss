@@ -1,30 +1,13 @@
 @import "src/assets/styles/base/_variables.scss";
 @import "src/assets/styles/_custom-mixins.scss";
+@import "src/assets/styles/variables.scss";
 @import "src/assets/styles/_variables.scss";
 :host {
-
-    ul.rating .ion-md-star-outline:before{
-      content: "\F4B2" !important;
-      color: $info-color !important;
-      font-weight: $font-weight-bold
-    }
-  
-          /* Sb-Rating Component Styling */
-    ul {
-    // migration-TODO
-    @include padding($base-block-space);
-      &.rating li {
-        @include padding($base-block-space * 1.5 !important);
-        background: none;
-        color: $info-color;
-        ion-icon {
-          font-size: ($font-size-base * 2);
-        }
-      }
-    }
   
     .sb-modal-close{
       font-size: 24px !important;
+      position: absolute;
+      right: 10%;
     }
   
     .content-rating-alert ion-backdrop {
@@ -79,6 +62,8 @@
   
     .sb-popover-items{
         padding-bottom: 0 !important;
+        background-color: map-get($colors, white);
+        border-radius: 5px;
     }
   
     .sb-popover-footer{
@@ -86,8 +71,8 @@
     }
   
     .app-rating-img{
-      margin-top: $base-block-space * 2;
-      padding-left: $base-block-space * 1;
+      margin-top: $base-block-space * 3;
+      margin-bottom: $base-block-space * 0.5;
       height: $base-block-space * 7;
     }
   
@@ -103,10 +88,12 @@
       height: 32px !important;
       width:auto !important;
     }
-    
-  }
 
-  .sc-ion-buttons-md-s .button-has-icon-only.button-clear {
-    height: 32px !important;
-    width:auto !important;
+    .app-rate-center {
+      --padding-start: 5%;
+      --padding-end: 5%;
+      --padding-top: 5%;
+      --padding-bottom: 5%;
+      --background: transparent;
+    }
   }

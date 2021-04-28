@@ -1,13 +1,13 @@
-import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import {ResourcesComponent} from './resources.component';
-import { TranslateModule } from '@ngx-translate/core';
-import { RouterModule } from '@angular/router';
-import { IonicModule } from '@ionic/angular';
-import { ComponentsModule } from '../components/components.module';
-// import { PlayerPageModule } from '../player/player.module';
+import { NgModule } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
 import { DirectivesModule } from '@app/directives/directives.module';
-// import { NotificationsPageModule } from '../notifications/notifications.module';
+import { IonicModule } from '@ionic/angular';
+import { TranslateModule } from '@ngx-translate/core';
+import { CommonConsumptionModule } from '@project-sunbird/common-consumption-v8';
+import { ComponentsModule } from '../components/components.module';
+import { ResourcesRoutingModule } from './resources-routing.module';
+import { ResourcesComponent } from './resources.component';
 
 @NgModule({
   declarations: [
@@ -18,22 +18,17 @@ import { DirectivesModule } from '@app/directives/directives.module';
     IonicModule.forRoot({
       scrollPadding: false,
       scrollAssist: true,
-      // autoFocusAssist: false
     }),
     TranslateModule.forChild(),
-    RouterModule.forChild([
-      {
-        path: '',
-        component: ResourcesComponent
-      }
-    ]),
+    ResourcesRoutingModule,
     ComponentsModule,
-    // PlayerPageModule,
     DirectivesModule,
-    // NotificationsPageModule
+    ReactiveFormsModule,
+    CommonConsumptionModule
   ],
   exports: [
     ResourcesComponent
-  ]
+  ],
+  entryComponents: []
 })
 export class ResourcesModule { }

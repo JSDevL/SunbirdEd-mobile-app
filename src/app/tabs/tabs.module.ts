@@ -7,8 +7,8 @@ import { IonicModule } from '@ionic/angular';
 
 import { TabsPage } from './tabs.page';
 import { TranslateModule } from '@ngx-translate/core';
-import { CoursesPage } from '../courses/courses.page';
 import { RouterLinks } from '../app.constant';
+import { UserTypeSpecificTabGuard } from './usertype-specific-tab.guard';
 
 const routes: Routes = [
   {
@@ -16,7 +16,26 @@ const routes: Routes = [
     component: TabsPage,
     children: [
       {
+        path: RouterLinks.HOME,
+        children: [
+          {
+            path: '',
+            loadChildren: '../home/home.module#HomePageModule'
+          }
+        ]
+      },
+      {
+        path: RouterLinks.SEARCH,
+        children: [
+          {
+            path: '',
+            loadChildren: '../search/search.module#SearchPageModule'
+          }
+        ]
+      },
+      {
         path: RouterLinks.RESOURCES,
+        canActivate: [UserTypeSpecificTabGuard],
         children: [
           {
             path: '',
@@ -25,7 +44,7 @@ const routes: Routes = [
         ]
       },
       {
-        path: 'courses',
+        path: RouterLinks.COURSES,
         children: [
           {
             path: '',
@@ -34,7 +53,7 @@ const routes: Routes = [
         ]
       },
       {
-        path: 'guest-profile',
+        path: RouterLinks.GUEST_PROFILE,
         children: [
           {
             path: '',
@@ -52,18 +71,13 @@ const routes: Routes = [
         ]
       },
       {
-        path: 'download-manager',
+        path: RouterLinks.DOWNLOAD_MANAGER,
         children: [
           {
             path: '',
             loadChildren: '../download-manager/download-manager.module#DownloadManagerPageModule'
           }
         ]
-      },
-      {
-        path: '',
-        redirectTo: 'resources',
-        pathMatch: 'full'
       }
     ]
   }
@@ -77,6 +91,7 @@ const routes: Routes = [
     RouterModule.forChild(routes),
     TranslateModule.forChild()
   ],
-  declarations: [TabsPage]
+  declarations: [TabsPage],
+  providers: [UserTypeSpecificTabGuard]
 })
 export class TabsPageModule { }

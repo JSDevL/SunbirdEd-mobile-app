@@ -1,8 +1,9 @@
-import { TelemetryGeneratorService } from '../../../services/telemetry-generator.service';
+import { Component, Inject } from '@angular/core';
+import { FileSizePipe } from '@app/pipes/file-size/file-size';
+import { ContentUtil } from '@app/util/content-util';
+import { NavParams, PopoverController, ToastController } from '@ionic/angular';
+import { Events } from '@app/util/events';
 import { TranslateService } from '@ngx-translate/core';
-import { Events, PopoverController, NavParams, ModalController } from '@ionic/angular';
-import { Platform, ToastController } from '@ionic/angular';
-import { Component, Inject, OnInit } from '@angular/core';
 import {
   AuthService,
   ContentDeleteResponse,
@@ -10,23 +11,24 @@ import {
   ContentService,
   CorrelationData,
   OAuthSession,
-  Rollup,
-  TelemetryObject
+  Rollup
 } from 'sunbird-sdk';
 import { CommonUtilService } from '../../../services/common-util.service';
 import { Environment, InteractSubtype, InteractType } from '../../../services/telemetry-constants';
+import { TelemetryGeneratorService } from '../../../services/telemetry-generator.service';
 import { SbPopoverComponent } from '../popups/sb-popover/sb-popover.component';
-import { FileSizePipe } from '@app/pipes/file-size/file-size';
-import { SbGenericPopoverComponent } from '../popups/sb-generic-popover/sb-generic-popover.component';
-import * as moment from 'moment';
+import { PageId } from './../../../services/telemetry-constants';
+
 @Component({
   selector: 'app-content-actions',
   templateUrl: './content-actions.component.html',
   styleUrls: ['./content-actions.component.scss']
 })
-export class ContentActionsComponent implements OnInit {
+export class ContentActionsComponent {
 
   content: any;
+  chapter: any;
+  downloadIdentifiers: any;
   data: any;
   isChild = false;
   contentId: string;
@@ -35,18 +37,18 @@ export class ContentActionsComponent implements OnInit {
   userId = '';
   pageName = '';
   showFlagMenu = true;
+  showChapterActions = false;
   public objRollup: Rollup;
   private corRelationList: Array<CorrelationData>;
+  showUnenrolledButton = false;
 
   constructor(
     @Inject('CONTENT_SERVICE') private contentService: ContentService,
+    @Inject('AUTH_SERVICE') private authService: AuthService,
     private navParams: NavParams,
     private toastCtrl: ToastController,
-    public popoverCtrl: PopoverController,
-    @Inject('AUTH_SERVICE') private authService: AuthService,
     private events: Events,
     private translate: TranslateService,
-    private platform: Platform,
     private commonUtilService: CommonUtilService,
     private telemetryGeneratorService: TelemetryGeneratorService,
     private fileSizePipe: FileSizePipe,
@@ -58,22 +60,21 @@ export class ContentActionsComponent implements OnInit {
     this.pageName = this.navParams.get('pageName');
     this.objRollup = this.navParams.get('objRollup');
     this.corRelationList = this.navParams.get('corRelationList');
+    this.chapter = this.navParams.get('chapter');
+    this.downloadIdentifiers = this.navParams.get('downloadIdentifiers');
 
     if (this.navParams.get('isChild')) {
       this.isChild = true;
     }
+    if (this.pageName === PageId.CHAPTER_DETAILS) {
+      this.showChapterActions = true;
+    }
 
     this.contentId = (this.content && this.content.identifier) ? this.content.identifier : '';
-    this.backButtonFunc = this.platform.backButton.subscribeWithPriority(10, () => {
-      this.popOverCtrl.dismiss();
-      this.backButtonFunc.unsubscribe();
-    });
     this.getUserId();
+    this.isCourseCompleted();
   }
 
-  ngOnInit() {
-
-  }
 
   getUserId() {
     this.authService.getSession().subscribe((session: OAuthSession) => {
@@ -109,16 +110,13 @@ export class ContentActionsComponent implements OnInit {
   async close(i) {
     switch (i) {
       case 0: {
-        const confirm = await this.popoverCtrl.create({
+        const confirm = await this.popOverCtrl.create({
           component: SbPopoverComponent,
           componentProps: {
             content: this.content,
-            // isChild: this.isDepthChild,
             objRollup: this.objRollup,
-            // pageName: PageId.COLLECTION_DETAIL,
             corRelationList: this.corRelationList,
             sbPopoverHeading: this.commonUtilService.translateMessage('REMOVE_FROM_DEVICE'),
-            // sbPopoverMainTitle: this.commonUtilService.translateMessage('REMOVE_FROM_DEVICE_MSG'),
             sbPopoverMainTitle: this.content.name,
             actionsButtons: [
               {
@@ -127,25 +125,21 @@ export class ContentActionsComponent implements OnInit {
               },
             ],
             icon: null,
-            metaInfo:
-              // this.contentDetail.contentTypesCount.TextBookUnit + 'items' +
-              // this.batchDetails.courseAdditionalInfo.leafNodesCount + 'items' +
-              '(' + this.fileSizePipe.transform(this.content.size, 2) + ')',
+            metaInfo: '(' + this.fileSizePipe.transform(this.content.size, 2) + ')',
             sbPopoverContent: 'Are you sure you want to delete ?'
           },
           cssClass: 'sb-popover danger',
         });
         await confirm.present();
-        const response = await confirm.onDidDismiss();
+        const { data } = await confirm.onDidDismiss();
 
-        if (response.data) {
+        if (data && data.canDelete) {
           this.deleteContent();
         }
         break;
       }
       case 1: {
         this.popOverCtrl.dismiss();
-        // this.reportIssue();
         break;
       }
     }
@@ -154,51 +148,34 @@ export class ContentActionsComponent implements OnInit {
   /*
    * shows alert to confirm unenroll send back user selection */
   async unenroll() {
-    const confirm = await this.popoverCtrl.create({
-      component: SbGenericPopoverComponent,
-      componentProps: {
-        sbPopoverHeading: this.commonUtilService.translateMessage('UNENROLL_FROM_COURSE'),
-        sbPopoverMainTitle: this.commonUtilService.translateMessage('UNENROLL_CONFIRMATION_MESSAGE'),
-        actionsButtons: [
-          {
-            btntext: this.commonUtilService.translateMessage('CANCEL'),
-            btnClass: 'sb-btn sb-btn-sm  sb-btn-outline-info'
-          },
-          {
-            btntext: this.commonUtilService.translateMessage('CONFIRM'),
-            btnClass: 'popover-color'
-          }
-        ],
-        icon: null
-      },
-      cssClass: 'sb-popover info',
-    });
-    await confirm.present();
-    const response = await confirm.onDidDismiss();
+    this.telemetryGeneratorService.generateInteractTelemetry(
+      InteractType.TOUCH,
+      InteractSubtype.UNENROL_CLICKED,
+      Environment.HOME,
+      this.pageName,
+      ContentUtil.getTelemetryObject(this.content),
+      undefined,
+      this.objRollup,
+      this.corRelationList);
+    this.popOverCtrl.dismiss({ unenroll: true });
+  }
 
-    let unenroll: any = false;
-    if (response.data.leftBtnClicked == null) {
-      unenroll = false;
-    } else if (response.data.leftBtnClicked) {
-      unenroll = false;
-    } else {
-      unenroll = true;
-    }
-    this.popOverCtrl.dismiss({
-      caller: 'unenroll',
-      unenroll
-    });
+  async download() {
+    this.popOverCtrl.dismiss({ download: true });
+  }
+
+  async share() {
+    this.popOverCtrl.dismiss({ share: true });
   }
 
   async deleteContent() {
-    const telemetryObject = new TelemetryObject(this.content.identifier, this.content.contentType, this.content.pkgVersion);
 
     this.telemetryGeneratorService.generateInteractTelemetry(
       InteractType.TOUCH,
       InteractSubtype.DELETE_CLICKED,
       Environment.HOME,
       this.pageName,
-      telemetryObject,
+      ContentUtil.getTelemetryObject(this.content),
       undefined,
       this.objRollup,
       this.corRelationList);
@@ -207,7 +184,6 @@ export class ContentActionsComponent implements OnInit {
     await loader.present();
     this.contentService.deleteContent(this.getDeleteRequestBody()).toPromise()
       .then(async (data: ContentDeleteResponse[]) => {
-        console.log('data on delete', data);
         await loader.dismiss();
         if (data && data[0].status === ContentDeleteStatus.NOT_FOUND) {
           this.showToaster(this.getMessageByConstant('CONTENT_DELETE_FAILED'));
@@ -226,6 +202,20 @@ export class ContentActionsComponent implements OnInit {
         this.showToaster(this.getMessageByConstant('CONTENT_DELETE_FAILED'));
         this.popOverCtrl.dismiss();
       });
+  }
+
+  async syncCourseProgress() {
+
+    this.telemetryGeneratorService.generateInteractTelemetry(
+      InteractType.TOUCH,
+      InteractSubtype.SYNC_PROGRESS_CLICKED,
+      Environment.HOME,
+      this.pageName,
+      ContentUtil.getTelemetryObject(this.content),
+      undefined,
+      this.objRollup,
+      this.corRelationList);
+    this.popOverCtrl.dismiss({ syncProgress: true });
   }
 
 
@@ -247,30 +237,13 @@ export class ContentActionsComponent implements OnInit {
     );
     return msg;
   }
-  // check wheather to show Unenroll button in overflow menu or not
-  showUnenrollButton(): boolean {
-    return (this.data &&
-      (this.data.batchStatus !== 2 &&
-        (this.data.contentStatus === 0 || this.data.contentStatus === 1 || this.data.courseProgress < 100) &&
-        this.data.enrollmentType !== 'invite-only'));
-  }
 
-  isUnenrollDisabled() {
-    let isEnrolledDisabled = true;
-    let progress;
-    const todayDate = moment(new Date()).format('YYYY-MM-DD');
-    if (this.data && this.data.courseProgress) {
-      progress = this.data.courseProgress ? Math.round(this.data.courseProgress) : 0;
+  private isCourseCompleted() {
+    if (this.content && this.content.progress === 100) {
+      if (this.batchDetails && ((this.batchDetails.endDate &&
+        (new Date(this.batchDetails.endDate) >= new Date())) || !this.batchDetails.endDate)) {
+          this.showUnenrolledButton = true;
+      }
     }
-    if (!this.batchDetails) {
-      return isEnrolledDisabled;
-    }
-    if ((!(this.batchDetails && this.batchDetails.hasOwnProperty('endDate')) ||
-      (this.batchDetails.endDate > todayDate)) &&
-      (this.batchDetails.enrollmentType === 'open') &&
-      (progress !== 100)) {
-      isEnrolledDisabled = false;
-    }
-    return isEnrolledDisabled;
   }
 }

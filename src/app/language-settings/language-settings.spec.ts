@@ -1,394 +1,700 @@
-import {LanguageSettingsPage} from '@app/pages/language-settings/language-settings';
+import { LanguageSettingsPage } from './language-settings';
+import { SharedPreferences } from 'sunbird-sdk';
+import { TranslateService } from '@ngx-translate/core';
+import { Platform } from '@ionic/angular';
+import { Events } from '@app/util/events';
+import { NgZone } from '@angular/core';
 import {
-  appGlobalServiceMock,
-  commonUtilServiceMock,
-  eventsMock,
-  navCtrlMock,
-  navParamsMock,
-  platformMock,
-  sharedPreferencesMock,
-  telemetryGeneratorServiceMock,
-  translateServiceMock,
-  zoneMock
-} from '@app/__tests__/mocks';
-import {PreferenceKey} from '@app/app';
+    AppHeaderService,
+    CommonUtilService,
+    Environment, ID, ImpressionType, InteractSubtype,
+    InteractType,
+    NotificationService, PageId,
+    TelemetryGeneratorService
+} from '@app/services';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Location } from '@angular/common';
+import { NativePageTransitions } from '@ionic-native/native-page-transitions/ngx';
+import { appLanguages, PreferenceKey, RouterLinks } from '@app/app/app.constant';
+import { of } from 'rxjs';
+import { CorReleationDataType } from '../../services';
+import { CorrelationData } from '../../../../sunbird-mobile-sdk/src';
 
-import {Environment, ImpressionType, InteractSubtype, InteractType, PageId} from 'sunbird';
-import {OnboardingPage} from '@app/pages/onboarding/onboarding';
-import {UserTypeSelectionPage} from '@app/pages/user-type-selection';
 
 describe('LanguageSettingsPage', () => {
-  let languageSettingsPage: LanguageSettingsPage;
+    let languageSettingsPage: LanguageSettingsPage;
 
-  beforeEach(() => {
-    languageSettingsPage = new LanguageSettingsPage(
-      navCtrlMock as any,
-      navParamsMock as any,
-      translateServiceMock as any,
-      sharedPreferencesMock as any,
-      eventsMock as any,
-      zoneMock as any,
-      telemetryGeneratorServiceMock as any,
-      platformMock as any,
-      appGlobalServiceMock as any,
-      commonUtilServiceMock as any
-    );
+    const mockPreferences: Partial<SharedPreferences> = {
+        putBoolean: jest.fn(() => of(undefined))
+    };
 
-    jest.resetAllMocks();
-  });
+    const mockTranslateService: Partial<TranslateService> = {};
 
-  it('can load instance', () => {
-    expect(languageSettingsPage).toBeTruthy();
-  });
+    const mockEvents: Partial<Events> = {};
 
-  it('languages defaults to: []', () => {
-    expect(languageSettingsPage.languages).toEqual([]);
-  });
+    const mockNgZone: Partial<NgZone> = {};
 
-  it('isLanguageSelected defaults to: false', () => {
-    expect(languageSettingsPage.isLanguageSelected).toEqual(false);
-  });
+    const mockTelemetryGeneratorService: Partial<TelemetryGeneratorService> = {
+        generateAuditTelemetry: jest.fn(),
+        generatePageLoadedTelemetry: jest.fn(),
+        generateInteractTelemetry: jest.fn()
+    };
 
-  it('isFromSettings defaults to: false', () => {
-    expect(languageSettingsPage.isFromSettings).toEqual(false);
-  });
+    const mockPlatform: Partial<Platform> = {};
 
-  it('btnColor defaults to: #55acee', () => {
-    expect(languageSettingsPage.btnColor).toEqual('#55acee');
-  });
+    const mockCommonUtilService: Partial<CommonUtilService> = {};
 
-  describe('init', () => {
-    it('should set language if language selected in preferences', (done) => {
-      // arrange
-      sharedPreferencesMock.getString.mockResolvedValue('SOME_LANGUAGE');
+    const mockAppHeaderService: Partial<AppHeaderService> = {
+        hideHeader: jest.fn(),
+        showHeaderWithBackButton: jest.fn(),
+        showStatusBar: jest.fn()
+    };
 
-      // act
-      languageSettingsPage.init();
-      zoneMock.run.mock.calls[0][0].call(languageSettingsPage);
+    const mockNotificationService: Partial<NotificationService> = {};
 
-      // assert
-      expect(sharedPreferencesMock.getString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE_CODE);
-      setTimeout(() => {
-        expect(languageSettingsPage.previousLanguage).toEqual('SOME_LANGUAGE');
-        expect(languageSettingsPage.language).toEqual('SOME_LANGUAGE');
-        done();
-      }, 0);
-    });
+    let mockRouter: Partial<Router> = {
+        url: '/' + RouterLinks.LANGUAGE_SETTING + '/' + 'true'
+    };
 
-    it('should not set language if language selected in preferences', (done) => {
-      // arrange
-      sharedPreferencesMock.getString.mockResolvedValue(undefined);
+    const mockLocation: Partial<Location> = {};
 
-      // act
-      languageSettingsPage.init();
-      zoneMock.run.mock.calls[0][0].call(languageSettingsPage);
+    const mockActivatedRoute: Partial<ActivatedRoute> = {
+    };
 
-      // assert
-      expect(sharedPreferencesMock.getString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE_CODE);
-      setTimeout(() => {
-        expect(languageSettingsPage.previousLanguage).toEqual(undefined);
-        done();
-      }, 0);
-    });
-  });
+    const mockNativeTransitions: Partial<NativePageTransitions> = {};
 
-  describe('ionViewDidLoad', () => {
-    it('should generate Impresstion Telemetry on load', () => {
-      // act
-      languageSettingsPage.ionViewDidLoad();
-
-      // assert
-      expect(telemetryGeneratorServiceMock.generateImpressionTelemetry).toHaveBeenCalledWith(
-        ImpressionType.VIEW, '',
-        languageSettingsPage.isFromSettings ? PageId.SETTINGS_LANGUAGE : PageId.ONBOARDING_LANGUAGE_SETTING,
-        languageSettingsPage.isFromSettings ? Environment.SETTINGS : Environment.ONBOARDING
-      );
-    });
-
-    describe('Register backButton Function', () => {
-      it('should bind backButton action with a function', () => {
-        // act
-        languageSettingsPage.ionViewDidLoad();
-
-        // assert
-        expect(platformMock.registerBackButtonAction).toHaveBeenCalledWith(expect.any(Function), 10);
-      });
-
-      it('should bind backButton action with a function that generates Interact telemetry', () => {
-        // arrange
-        platformMock.registerBackButtonAction.mockReturnValue(jest.fn());
-
-        // act
-        languageSettingsPage.ionViewDidLoad();
-        platformMock.registerBackButtonAction.mock.calls[0][0].call(languageSettingsPage);
-
-        // assert
-        expect(telemetryGeneratorServiceMock.generateInteractTelemetry).toHaveBeenCalledWith(
-          InteractType.TOUCH, InteractSubtype.DEVICE_BACK_CLICKED,
-          languageSettingsPage.isFromSettings ? Environment.SETTINGS : Environment.ONBOARDING,
-          languageSettingsPage.isFromSettings ? PageId.SETTINGS_LANGUAGE : PageId.ONBOARDING_LANGUAGE_SETTING,
+    beforeAll(() => {
+        languageSettingsPage = new LanguageSettingsPage(
+            mockPreferences as SharedPreferences,
+            mockTranslateService as TranslateService,
+            mockEvents as Events,
+            mockNgZone as NgZone,
+            mockTelemetryGeneratorService as TelemetryGeneratorService,
+            mockPlatform as Platform,
+            mockCommonUtilService as CommonUtilService,
+            mockAppHeaderService as AppHeaderService,
+            mockNotificationService as NotificationService,
+            mockRouter as Router,
+            mockLocation as Location,
+            mockActivatedRoute as ActivatedRoute,
+            mockNativeTransitions as NativePageTransitions
         );
-      });
+    });
 
-      it('should bind backButton action with a function that pops current page if isFromSettings', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('should create instance of language-settings page', () => {
+        // assert
+        expect(languageSettingsPage).toBeTruthy();
+    });
+
+    it('should handle interact telemetry with selectedLang and subType when from isFromSettings is false', () => {
         // arrange
-        navParamsMock.get.mockReturnValue(true);
-        platformMock.registerBackButtonAction.mockReturnValue(jest.fn());
+        languageSettingsPage.isFromSettings = false;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        // act
+        languageSettingsPage.generateClickInteractEvent('en', 'continue-clicked');
+        // assert
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.TOUCH,
+            'continue-clicked',
+            Environment.ONBOARDING,
+            PageId.ONBOARDING_LANGUAGE_SETTING,
+            undefined,
+            { selectedLanguage: 'en' }
+        );
+    });
+
+    it('should handle interact telemetry with selectedLang and subType when isFromSettings is true', () => {
+        // arrange
+        languageSettingsPage.isFromSettings = true;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        // act
+        languageSettingsPage.generateClickInteractEvent('en', 'continue-clicked');
+        // assert
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.TOUCH,
+            'continue-clicked',
+            Environment.SETTINGS,
+            PageId.SETTINGS_LANGUAGE,
+            undefined,
+            { selectedLanguage: 'en' }
+        );
+    });
+
+    it('should generate interact telemetry after language success when isFromSettings is false', () => {
+        // arrange
+        languageSettingsPage.isFromSettings = false;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        // act
+        languageSettingsPage.generateLanguageSuccessInteractEvent('hi', 'en');
+        // assert
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.TOUCH,
+            InteractSubtype.LANGUAGE_SETTINGS_SUCCESS,
+            Environment.ONBOARDING,
+            PageId.ONBOARDING_LANGUAGE_SETTING,
+            undefined,
+            { previousLanguage: 'hi', currentLanguage: 'en' }
+        );
+    });
+
+    it('should generate interact telemetry after language success when isFromSettings is true', () => {
+        // arrange
+        languageSettingsPage.isFromSettings = true;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        // act
+        languageSettingsPage.generateLanguageSuccessInteractEvent('', 'en');
+        // assert
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.TOUCH,
+            InteractSubtype.LANGUAGE_SETTINGS_SUCCESS,
+            Environment.SETTINGS,
+            PageId.SETTINGS_LANGUAGE,
+            undefined,
+            { previousLanguage: '', currentLanguage: 'en' }
+        );
+    });
+
+    it('should change the button color to default if language is not present', () => {
+        // arrange
+        languageSettingsPage.language = undefined;
+        // act
+        languageSettingsPage.onLanguageSelected();
+        // assert
+        expect(languageSettingsPage.btnColor).toBe('#8FC4FF');
+    });
+
+    it('should change the button color to default if language is present', (done) => {
+        // arrange
+        languageSettingsPage.language = 'en';
+        mockNgZone.run = jest.fn((fn) => fn());
+        mockTranslateService.use = jest.fn();
+        // act
+        languageSettingsPage.onLanguageSelected();
+        // assert
+        setTimeout(() => {
+            expect(mockTranslateService.use).toHaveBeenCalledWith('en');
+            expect(languageSettingsPage.btnColor).toBe('#006DE5');
+            expect(languageSettingsPage.isLanguageSelected).toBe(true);
+            done();
+        }, 0);
+    });
+
+    it('should call set initial available languages and call getString method from ' +
+        'sharedPreferences to check if language available or not', (done) => {
+            // arrange
+            languageSettingsPage.languages = appLanguages;
+            mockNgZone.run = jest.fn((fn) => fn());
+            mockPreferences.getString = jest.fn(() => of('en'));
+            // act
+            languageSettingsPage.init();
+            // assert
+            setTimeout(() => {
+                expect(mockPreferences.getString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE_CODE);
+                expect(languageSettingsPage.previousLanguage).toBe('en');
+                expect(languageSettingsPage.language).toBe('en');
+                done();
+            }, 0);
+        });
+    it('should call set initial available languages and call getString method from ' +
+        'sharedPreferences to check if language is undefined', (done) => {
+            // arrange
+            languageSettingsPage.languages = appLanguages;
+            mockNgZone.run = jest.fn((fn) => fn());
+            mockPreferences.getString = jest.fn(() => of(undefined));
+            // act
+            languageSettingsPage.init();
+            // assert
+            setTimeout(() => {
+                expect(mockPreferences.getString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE_CODE);
+                expect(languageSettingsPage.previousLanguage).toBe(undefined);
+                done();
+            }, 0);
+        });
+
+    it('should generate telemetry events and set in preferences, setLocationNotification service and navigate', (done) => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = true;
+        languageSettingsPage.isFromSettings = false;
+        languageSettingsPage.previousLanguage = 'hi';
+        jest.spyOn(languageSettingsPage, 'generateClickInteractEvent').mockImplementation();
+        jest.spyOn(languageSettingsPage, 'generateLanguageSuccessInteractEvent').mockImplementation();
+        languageSettingsPage.languages = [{ code: 'en', label: 'English' }];
+        languageSettingsPage.language = 'en';
+        languageSettingsPage.selectedLanguage = { code: 'en' };
+        mockPreferences.putString = jest.fn(() => of(undefined));
+        mockTranslateService.use = jest.fn();
+        mockEvents.publish = jest.fn();
+        mockNotificationService.setupLocalNotification = jest.fn();
+        mockNativeTransitions.slide = jest.fn();
+        mockRouter.navigate = jest.fn();
+        mockLocation.back = jest.fn();
+        // act
+        languageSettingsPage.continue();
+        // assert
+        expect(languageSettingsPage.generateClickInteractEvent).toHaveBeenCalledWith('en', 'continue-clicked');
+        expect(languageSettingsPage.generateLanguageSuccessInteractEvent).toHaveBeenCalledWith('hi', 'en');
+        setTimeout(() => {
+            expect(mockPreferences.putString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE_CODE, 'en');
+            expect(mockPreferences.putString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE, 'English');
+            expect(mockTranslateService.use).toHaveBeenCalledWith('en');
+            expect(mockEvents.publish).toHaveBeenCalledWith('onAfterLanguageChange:update', { selectedLanguage: 'en' });
+            expect(mockNotificationService.setupLocalNotification).toHaveBeenCalledWith('en');
+            expect(mockNativeTransitions.slide).toHaveBeenCalled();
+            expect(mockRouter.navigate).toHaveBeenCalledWith([RouterLinks.USER_TYPE_SELECTION]);
+            done();
+        }, 0);
+    });
+
+    it('should generate telemetry events and set in preferences, and isFromSettings is true then location.backFired', (done) => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = true;
+        languageSettingsPage.isFromSettings = true;
+        languageSettingsPage.previousLanguage = 'hi';
+        jest.spyOn(languageSettingsPage, 'generateClickInteractEvent').mockImplementation();
+        jest.spyOn(languageSettingsPage, 'generateLanguageSuccessInteractEvent').mockImplementation();
+        languageSettingsPage.languages = [{ code: 'en', label: 'English' }];
+        languageSettingsPage.language = 'en';
+        languageSettingsPage.selectedLanguage = { code: 'en' };
+        mockPreferences.putString = jest.fn(() => of(undefined));
+        mockTranslateService.use = jest.fn();
+        mockEvents.publish = jest.fn();
+        mockNotificationService.setupLocalNotification = jest.fn();
+        mockLocation.back = jest.fn();
+        // act
+        languageSettingsPage.continue();
+        // assert
+        expect(languageSettingsPage.generateClickInteractEvent).toHaveBeenCalledWith('en', 'continue-clicked');
+        expect(languageSettingsPage.generateLanguageSuccessInteractEvent).toHaveBeenCalledWith('hi', 'en');
+        setTimeout(() => {
+            expect(mockPreferences.putString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE_CODE, 'en');
+            expect(mockPreferences.putString).toHaveBeenCalledWith(PreferenceKey.SELECTED_LANGUAGE, 'English');
+            expect(mockTranslateService.use).toHaveBeenCalledWith('en');
+            expect(mockEvents.publish).toHaveBeenCalledWith('onAfterLanguageChange:update', { selectedLanguage: 'en' });
+            expect(mockNotificationService.setupLocalNotification).toHaveBeenCalledWith('en');
+            expect(mockLocation.back).toHaveBeenCalled();
+            done();
+        }, 0);
+    });
+
+    it('should go to else part if isLanguageSelected is undefined', () => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = false;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        mockCommonUtilService.showToast = jest.fn();
+        mockCommonUtilService.translateMessage = jest.fn();
+        // act
+        languageSettingsPage.continue();
+        // assert
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.DISABLED,
+            '',
+            Environment.ONBOARDING,
+            PageId.ONBOARDING_LANGUAGE_SETTING,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            ID.CONTINUE_CLICKED
+        );
+        expect(languageSettingsPage.btnColor).toBe('#8FC4FF');
+        expect(mockCommonUtilService.showToast).toHaveBeenCalledWith('ⓘ undefined', false, 'redErrorToast');
+    });
+
+    it('should cover else part if this.language is false or undefined', (done) => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = true;
+        languageSettingsPage.language = undefined;
+        jest.spyOn(languageSettingsPage, 'generateClickInteractEvent').mockImplementation();
+        jest.spyOn(languageSettingsPage, 'generateLanguageSuccessInteractEvent').mockImplementation();
+        mockEvents.publish = jest.fn();
+        mockNotificationService.setupLocalNotification = jest.fn();
+        mockLocation.back = jest.fn();
+        languageSettingsPage.isFromSettings = true;
 
         // act
-        languageSettingsPage.ionViewDidLoad();
-        platformMock.registerBackButtonAction.mock.calls[0][0].call(languageSettingsPage);
-
+        languageSettingsPage.continue();
         // assert
-        expect(navCtrlMock.pop).toHaveBeenCalled();
-      });
+        expect(languageSettingsPage.generateClickInteractEvent).toHaveBeenCalledWith(undefined, 'continue-clicked');
+        expect(languageSettingsPage.generateLanguageSuccessInteractEvent).toHaveBeenCalledWith('hi', undefined);
+        setTimeout(() => {
+            expect(mockEvents.publish).toHaveBeenCalledWith('onAfterLanguageChange:update', { selectedLanguage: undefined });
+            expect(mockNotificationService.setupLocalNotification).toHaveBeenCalledWith(undefined);
+            expect(mockLocation.back).toHaveBeenCalled();
+            done();
+        }, 0);
+    });
 
-      it('should bind backButton action with a function that exits app if not isFromSettings', () => {
+    it('should generate telemetry if it isFromSettings is true', () => {
         // arrange
-        platformMock.registerBackButtonAction.mockReturnValue(jest.fn());
-
+        languageSettingsPage.isFromSettings = true;
+        mockTelemetryGeneratorService.generateBackClickedTelemetry = jest.fn();
+        mockLocation.back = jest.fn();
         // act
-        languageSettingsPage.ionViewDidLoad();
-        platformMock.registerBackButtonAction.mock.calls[0][0].call(languageSettingsPage);
-
+        languageSettingsPage.handleHeaderEvents({ name: 'back' });
         // assert
-        expect(commonUtilServiceMock.showExitPopUp).toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('onLanguageSelected', () => {
-    it('should set button color to #8FC4FF if language not selected', () => {
-      // arrange
-      languageSettingsPage.language = false;
-
-      // act
-      languageSettingsPage.onLanguageSelected();
-
-      // assert
-      expect(languageSettingsPage.language).toEqual(false);
-      expect(languageSettingsPage.btnColor).toEqual('#8FC4FF');
+        expect(mockTelemetryGeneratorService.generateBackClickedTelemetry).toHaveBeenCalledWith(
+            PageId.SETTINGS_LANGUAGE,
+            Environment.SETTINGS,
+            true
+        );
+        expect(mockLocation.back).toHaveBeenCalled();
     });
 
-    it('should set button color to #8FC4FF if language not selected', () => {
-      // arrange
-      languageSettingsPage.language = true;
-
-      // act
-      languageSettingsPage.onLanguageSelected();
-      zoneMock.run.mock.calls[0][0].call(languageSettingsPage);
-
-      // assert
-      expect(translateServiceMock.use).toHaveBeenCalledWith(true);
-      expect(languageSettingsPage.btnColor).toEqual('#006DE5');
-      expect(languageSettingsPage.language).toEqual(true);
-    });
-  });
-
-  describe('generateLanguageSuccessInteractEvent', () => {
-    it('should delegate to telementryGeneratorService', () => {
-      // act
-      languageSettingsPage.generateLanguageSuccessInteractEvent('en', 'de');
-
-      // assert
-      telemetryGeneratorServiceMock.generateInteractTelemetry(
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.objectContaining({
-          previousLanguage: 'en',
-          currentLanguage: 'de'
-        })
-      );
-    });
-  });
-
-  describe('generateClickInteractEvent', () => {
-    it('should delegate to telementryGeneratorService', () => {
-      // act
-      languageSettingsPage.generateClickInteractEvent('en', InteractSubtype.CONTINUE_CLICKED);
-
-      // assert
-      telemetryGeneratorServiceMock.generateInteractTelemetry(
-        expect.anything(),
-        InteractSubtype.CONTINUE_CLICKED,
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.objectContaining({
-          'selectedLanguage': 'en'
-        })
-      );
-    });
-  });
-
-  describe('continue', () => {
-    it('should publish event: onAfterLanguageChange:update if language selected', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = true;
-
-      // act
-      languageSettingsPage.continue();
-
-      // assert
-      expect(eventsMock.publish).toHaveBeenCalledWith('onAfterLanguageChange:update', expect.anything());
+    it('should generate telemetry if it isFromSettings is false', () => {
+        // arrange
+        languageSettingsPage.isFromSettings = false;
+        mockTelemetryGeneratorService.generateBackClickedTelemetry = jest.fn();
+        mockLocation.back = jest.fn();
+        // act
+        languageSettingsPage.handleHeaderEvents({ name: 'back' });
+        // assert
+        expect(mockTelemetryGeneratorService.generateBackClickedTelemetry).toHaveBeenCalledWith(
+            PageId.ONBOARDING_LANGUAGE_SETTING,
+            Environment.ONBOARDING,
+            true
+        );
+        expect(mockLocation.back).toHaveBeenCalled();
     });
 
-    it(' if isLanguage selected is true then makes expected calls', () => {
-      // arrange
-      languageSettingsPage.previousLanguage = '';
-      languageSettingsPage.isFromSettings = true;
-      languageSettingsPage.isLanguageSelected = true;
-      languageSettingsPage.language = 'en';
-      languageSettingsPage.languages = [
-        {
-          'code': 'en',
-          'label': 'English',
-          'isApplied': false
-        },
-        {
-          'label': 'हिंदी',
-          'code': 'hi',
-          'isApplied': false
-        },
-        {
-          'label': 'తెలుగు',
-          'code': 'te',
-          'isApplied': false
-        },
-        {
-          'label': 'தமிழ்',
-          'code': 'ta',
-          'isApplied': false
-        },
-        {
-          'label': 'मराठी',
-          'code': 'mr',
-          'isApplied': false
+    it('should go to else part if event.name doesnt matches', () => {
+        // arrange
+        mockTelemetryGeneratorService.generateBackClickedTelemetry = jest.fn();
+        mockLocation.back = jest.fn();
+        // act
+        languageSettingsPage.handleHeaderEvents({ name: undefined });
+        // assert
+        expect(mockTelemetryGeneratorService.generateBackClickedTelemetry).not.toHaveBeenCalled();
+        expect(mockLocation.back).not.toHaveBeenCalled();
+    });
+
+    it('should handle subscription when method is called and isFromSettings is false', () => {
+        // arrange
+        const subscribeWithPriorityData = jest.fn((_, fn) => fn());
+        mockPlatform.backButton = {
+            subscribeWithPriority: subscribeWithPriorityData,
+        } as any;
+        languageSettingsPage.isFromSettings = false;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        mockCommonUtilService.showExitPopUp = jest.fn();
+        // act
+        languageSettingsPage.handleBackButton();
+        // assert
+        expect(mockPlatform.backButton.subscribeWithPriority).toHaveBeenCalled();
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.TOUCH,
+            InteractSubtype.DEVICE_BACK_CLICKED,
+            Environment.ONBOARDING,
+            PageId.ONBOARDING_LANGUAGE_SETTING
+        );
+        expect(mockCommonUtilService.showExitPopUp).toHaveBeenCalledWith(
+            'onboarding-language-setting',
+            'onboarding',
+            false
+        );
+    });
+
+    it('should handle subscription when method is called when isFromSettings is true', () => {
+        // arrange
+        const subscribeWithPriorityData = jest.fn((_, fn) => fn());
+        mockPlatform.backButton = {
+            subscribeWithPriority: subscribeWithPriorityData,
+        } as any;
+        languageSettingsPage.isFromSettings = true;
+        mockTelemetryGeneratorService.generateInteractTelemetry = jest.fn();
+        mockLocation.back = jest.fn();
+        // act
+        languageSettingsPage.handleBackButton();
+        // assert
+        expect(mockPlatform.backButton.subscribeWithPriority).toHaveBeenCalled();
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(
+            InteractType.TOUCH,
+            InteractSubtype.DEVICE_BACK_CLICKED,
+            Environment.SETTINGS,
+            PageId.SETTINGS_LANGUAGE
+        );
+        expect(mockLocation.back).toHaveBeenCalled();
+    });
+
+    it('should fetch isFromSettings is false from activateRoute, getAppName, generateImpressionTelemetry', (done) => {
+        // arrange
+        mockActivatedRoute.snapshot = {
+            params: {
+                isFromSettings: false
+            }
+        } as any;
+        mockAppHeaderService.hideHeader = jest.fn();
+        mockCommonUtilService.getAppName = jest.fn(() => Promise.resolve('sample_app_name'));
+        jest.spyOn(languageSettingsPage, 'init').mockImplementation();
+        const data = jest.fn((fn => fn()));
+        mockAppHeaderService.headerEventEmitted$ = {
+            subscribe: data
+        } as any;
+        mockRouter = { url: '/' + RouterLinks.LANGUAGE_SETTING };
+        mockTelemetryGeneratorService.generateImpressionTelemetry = jest.fn();
+        jest.spyOn(languageSettingsPage, 'handleHeaderEvents').mockImplementation();
+        jest.spyOn(languageSettingsPage, 'handleBackButton').mockImplementation();
+        // act
+        languageSettingsPage.ionViewWillEnter();
+        // assert
+        expect(mockAppHeaderService.hideHeader).toHaveBeenCalled();
+        expect(mockCommonUtilService.getAppName).toHaveBeenCalled();
+        setTimeout(() => {
+            expect(mockTelemetryGeneratorService.generateImpressionTelemetry).toHaveBeenCalledWith(
+                ImpressionType.VIEW,
+                '',
+                PageId.ONBOARDING_LANGUAGE_SETTING,
+                Environment.ONBOARDING
+            );
+            expect(languageSettingsPage.init).toHaveBeenCalled();
+            expect(languageSettingsPage.handleBackButton).toHaveBeenCalled();
+            expect(languageSettingsPage.handleHeaderEvents).toHaveBeenCalled();
+            done();
+        }, 450);
+    });
+
+    it('should fetch isFromSettings is true from activateRoute, getAppName, generateImpressionTelemetry', (done) => {
+        // arrange
+        if (mockRouter.url === '/' + RouterLinks.LANGUAGE_SETTING + '/' + 'true') {
+            mockRouter = { url: '/' + RouterLinks.LANGUAGE_SETTING };
         }
-      ];
+        mockActivatedRoute.snapshot = {
+            params: {
+                isFromSettings: true
+            }
+        } as any;
+        mockAppHeaderService.showHeaderWithBackButton = jest.fn();
+        mockTelemetryGeneratorService.generateImpressionTelemetry = jest.fn();
+        mockCommonUtilService.getAppName = jest.fn(() => Promise.resolve('sample_app_name'));
+        jest.spyOn(languageSettingsPage, 'init').mockImplementation();
+        const data = jest.fn((fn => fn()));
+        mockAppHeaderService.headerEventEmitted$ = {
+            subscribe: data
+        } as any;
 
-      // act
-      languageSettingsPage.continue();
-
-      // assert
-      expect(languageSettingsPage.selectedLanguage).toEqual({
-        'code': 'en',
-        'label': 'English',
-        'isApplied': false
-      });
-      expect(sharedPreferencesMock.putString).toHaveBeenCalledWith(
-        PreferenceKey.SELECTED_LANGUAGE_CODE, 'en');
-      expect(sharedPreferencesMock.putString).toHaveBeenCalledWith(
-        PreferenceKey.SELECTED_LANGUAGE, 'English');
-      expect(translateServiceMock.use).toHaveBeenCalledWith('en');
+        jest.spyOn(languageSettingsPage, 'handleHeaderEvents').mockImplementation();
+        jest.spyOn(languageSettingsPage, 'handleBackButton').mockImplementation();
+        // act
+        languageSettingsPage.ionViewWillEnter();
+        // assert
+        expect(mockAppHeaderService.showHeaderWithBackButton).toHaveBeenCalled();
+        expect(mockCommonUtilService.getAppName).toHaveBeenCalled();
+        setTimeout(() => {
+            expect(mockTelemetryGeneratorService.generateImpressionTelemetry).toHaveBeenCalledWith(
+                ImpressionType.VIEW,
+                '',
+                PageId.SETTINGS_LANGUAGE,
+                Environment.SETTINGS
+            );
+            expect(languageSettingsPage.init).toHaveBeenCalled();
+            expect(languageSettingsPage.handleBackButton).toHaveBeenCalled();
+            expect(languageSettingsPage.handleHeaderEvents).toHaveBeenCalled();
+            done();
+        }, 450);
     });
 
-    it('should pop page if page has come from settings page', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = true;
-      languageSettingsPage.isFromSettings = true;
-
-      // act
-      languageSettingsPage.continue();
-
-      // assert
-      expect(navCtrlMock.pop).toHaveBeenCalled();
+    it('should handle if conditions in ionViewWillLeave()', () => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = true;
+        languageSettingsPage.languages = [{ code: 'en', label: 'English' }];
+        languageSettingsPage.selectedLanguage = { code: undefined };
+        languageSettingsPage.previousLanguage = 'hi';
+        mockTranslateService.use = jest.fn();
+        // act
+        languageSettingsPage.ionViewWillLeave();
+        // assert
+        expect(mockTranslateService.use).toHaveBeenCalledWith('hi');
     });
 
-    it('should navigate to the user type selection page if DISPLAY_ONBOARDING_PAGE ' +
-      'configuration is set to false', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = true;
-      languageSettingsPage.isFromSettings = false;
-      (appGlobalServiceMock as any).DISPLAY_ONBOARDING_PAGE = false;
-
-      // act
-      languageSettingsPage.continue();
-
-      // assert
-      expect(navCtrlMock.push).toHaveBeenCalledWith(UserTypeSelectionPage);
+    it('should handle if inside if previous language is undefined set to english', () => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = true;
+        languageSettingsPage.languages = [{ code: 'en', label: 'English' }];
+        languageSettingsPage.selectedLanguage = { code: undefined };
+        languageSettingsPage.previousLanguage = undefined;
+        mockTranslateService.use = jest.fn();
+        // act
+        languageSettingsPage.ionViewWillLeave();
+        // assert
+        expect(mockTranslateService.use).toHaveBeenCalledWith('en');
     });
 
-    it('should navigate to the onboarding page if DISPLAY_ONBOARDING_PAGE ' +
-      'configuration is set to true', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = true;
-      languageSettingsPage.isFromSettings = false;
-      (appGlobalServiceMock as any).DISPLAY_ONBOARDING_PAGE = true;
-
-      // act
-      languageSettingsPage.continue();
-
-      // assert
-      expect(navCtrlMock.push).toHaveBeenCalledWith(OnboardingPage);
+    it('should cover else part if selectedLanguage.code is already set', () => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = true;
+        languageSettingsPage.languages = [{ code: 'en', label: 'English' }];
+        languageSettingsPage.selectedLanguage = { code: 'en' };
+        languageSettingsPage.previousLanguage = undefined;
+        mockTranslateService.use = jest.fn();
+        // act
+        languageSettingsPage.ionViewWillLeave();
+        // assert
+        expect(mockTranslateService.use).not.toHaveBeenCalledWith('en');
+    });
+    it('should cover else part if isLanguageSelected is false', () => {
+        // arrange
+        languageSettingsPage.isLanguageSelected = false;
+        const unsubscribe = jest.fn();
+        languageSettingsPage.headerObservable = {
+            unsubscribe
+        };
+        languageSettingsPage.unregisterBackButton = {
+            unsubscribe
+        };
+        mockTranslateService.use = jest.fn();
+        // act
+        languageSettingsPage.ionViewWillLeave();
+        // assert
+        expect(mockTranslateService.use).not.toHaveBeenCalledWith('en');
+        expect(unsubscribe).toBeCalledTimes(2);
     });
 
-    it('should show popup if language is not selected', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = false;
 
-      // act
-      languageSettingsPage.continue();
+    describe('ionViewDidEnter', () => {
+        it('should hide the header if isFromSettings is false', (done) => {
+            // arrange
+            mockActivatedRoute.params = of({ isFromSettings: false });
+            mockPreferences.putString = jest.fn(() => of('JOYFUL'));
+            mockAppHeaderService.showStatusBar = jest.fn();
 
-      // assert
-      expect(commonUtilServiceMock.showToast).toHaveBeenCalledWith('PLEASE_SELECT_A_LANGUAGE', false, 'redErrorToast');
-    });
-  });
+            // act
+            languageSettingsPage.ionViewDidEnter();
+            // assert
+            setTimeout(() => {
+                expect(mockAppHeaderService.hideHeader).toHaveBeenCalled();
+                done();
+            }, 0);
+        });
 
-  describe('ionViewWillEnter', () => {
-    it('should delegate to init()', () => {
-      // arrange
-      spyOn(languageSettingsPage, 'init').and.stub();
+        it('should show header with Back button  if isFromSettings is true', () => {
+            // arrange
+            mockActivatedRoute.params = of({ isFromSettings: true });
 
-      // act
-      languageSettingsPage.init();
-
-      // assert
-      expect(languageSettingsPage.selectedLanguage).toEqual({});
-      expect(languageSettingsPage.init).toHaveBeenCalled();
-    });
-  });
-
-  describe('ionViewWillLeave', () => {
-    it('should call registered backButton', () => {
-      // arrange
-      (languageSettingsPage.unregisterBackButton as any) = jest.fn();
-      languageSettingsPage.isLanguageSelected = false;
-
-      // act
-      languageSettingsPage.ionViewWillLeave();
-
-      // assert
-      expect(languageSettingsPage.unregisterBackButton).toHaveBeenCalled();
+            // act
+            languageSettingsPage.ionViewDidEnter();
+            // assert
+            expect(mockAppHeaderService.showHeaderWithBackButton).toHaveBeenCalled();
+        });
     });
 
-    it('should use selected language if selected', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = true;
-      languageSettingsPage.selectedLanguage.code = undefined;
-      languageSettingsPage.previousLanguage = 'SAMPLE_LANGUAGE_CODE';
+});
 
-      // act
-      languageSettingsPage.ionViewWillLeave();
+describe('LanguageSettingsPage', () => {
+    let languageSettingsPage: LanguageSettingsPage;
 
-      // assert
-      expect(translateServiceMock.use).toHaveBeenCalledWith('SAMPLE_LANGUAGE_CODE');
+    const mockPreferences: Partial<SharedPreferences> = {};
+
+    const mockTranslateService: Partial<TranslateService> = {};
+
+    const mockEvents: Partial<Events> = {};
+
+    const mockNgZone: Partial<NgZone> = {
+        run: jest.fn()
+    };
+
+    const mockTelemetryGeneratorService: Partial<TelemetryGeneratorService> = {
+        generateAuditTelemetry: jest.fn(),
+        generatePageLoadedTelemetry: jest.fn(),
+        generateInteractTelemetry: jest.fn()
+    };
+
+    const mockPlatform: Partial<Platform> = {};
+
+    const mockCommonUtilService: Partial<CommonUtilService> = {};
+
+    const mockAppHeaderService: Partial<AppHeaderService> = {
+        hideHeader: jest.fn(),
+        showHeaderWithBackButton: jest.fn()
+    };
+
+    const mockNotificationService: Partial<NotificationService> = {};
+
+    let mockRouter: Partial<Router> = {
+        url: '/' + RouterLinks.LANGUAGE_SETTING + '/' + 'true'
+    };
+
+    const mockLocation: Partial<Location> = {};
+
+    const mockActivatedRoute: Partial<ActivatedRoute> = {
+    };
+
+    const mockNativeTransitions: Partial<NativePageTransitions> = {};
+
+    beforeAll(() => {
+        languageSettingsPage = new LanguageSettingsPage(
+            mockPreferences as SharedPreferences,
+            mockTranslateService as TranslateService,
+            mockEvents as Events,
+            mockNgZone as NgZone,
+            mockTelemetryGeneratorService as TelemetryGeneratorService,
+            mockPlatform as Platform,
+            mockCommonUtilService as CommonUtilService,
+            mockAppHeaderService as AppHeaderService,
+            mockNotificationService as NotificationService,
+            mockRouter as Router,
+            mockLocation as Location,
+            mockActivatedRoute as ActivatedRoute,
+            mockNativeTransitions as NativePageTransitions
+        );
     });
 
-    it('should use "en" when no previousLanguage and no language selected', () => {
-      // arrange
-      languageSettingsPage.isLanguageSelected = true;
-      languageSettingsPage.selectedLanguage.code = undefined;
-      languageSettingsPage.previousLanguage = undefined;
-
-      // act
-      languageSettingsPage.ionViewWillLeave();
-
-      // assert
-      expect(translateServiceMock.use).toHaveBeenCalledWith('en');
+    beforeEach(() => {
+        jest.clearAllMocks();
     });
-  });
+
+    it('should not generate any telemetry if router ur is not langauge settings', (done) => {
+        // arrange
+        mockActivatedRoute.snapshot = {
+            params: {
+                isFromSettings: false
+            }
+        } as any;
+        mockAppHeaderService.hideHeader = jest.fn();
+        mockCommonUtilService.getAppName = jest.fn(() => Promise.resolve('sample_app_name'));
+        jest.spyOn(languageSettingsPage, 'init').mockImplementation();
+        const data = jest.fn((fn => fn()));
+        mockAppHeaderService.headerEventEmitted$ = {
+            subscribe: data
+        } as any;
+        mockRouter.url = '/' + RouterLinks.RESOURCES;
+        mockTelemetryGeneratorService.generateImpressionTelemetry = jest.fn();
+        jest.spyOn(languageSettingsPage, 'handleHeaderEvents').mockImplementation();
+        jest.spyOn(languageSettingsPage, 'handleBackButton').mockImplementation();
+        // act
+        languageSettingsPage.ionViewWillEnter();
+        // assert
+        setTimeout(() => {
+            expect(mockTelemetryGeneratorService.generatePageLoadedTelemetry).not.toHaveBeenCalled();
+            done();
+        }, 450);
+    });
+
+    it('should generate telemetry with tapped language in cdata', () => {
+        // arrange
+        languageSettingsPage.tappedLanguage = 'en';
+        languageSettingsPage.language = 'hi';
+        languageSettingsPage.isFromSettings = false;
+        // act
+        languageSettingsPage.onLanguageSelected();
+        // assert
+        const cData: CorrelationData[] = [{
+            id: 'hi',
+            type: CorReleationDataType.NEW_VALUE
+          },
+          {
+            id: 'en',
+            type: CorReleationDataType.OLD_VALUE
+          }];
+        expect(mockTelemetryGeneratorService.generateInteractTelemetry).toHaveBeenCalledWith(InteractType.SELECT_LANGUAGE, '',
+            Environment.ONBOARDING,
+            PageId.LANGUAGE,
+            undefined,
+            undefined,
+            undefined,
+            cData);
+    });
+
 });

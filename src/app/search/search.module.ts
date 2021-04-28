@@ -10,6 +10,7 @@ import { ComponentsModule } from '../components/components.module';
 import { PipesModule } from '../../pipes/pipes.module';
 import { DirectivesModule } from '../../directives/directives.module';
 import { TranslateModule } from '@ngx-translate/core';
+import { CommonConsumptionModule } from '@project-sunbird/common-consumption-v8';
 
 
 const routes: Routes = [
@@ -28,8 +29,13 @@ const routes: Routes = [
     TranslateModule.forChild(),
     PipesModule,
     DirectivesModule,
-    ComponentsModule
+    ComponentsModule,
+    CommonConsumptionModule
   ],
-  declarations: [SearchPage ]
+  entryComponents: [],
+  declarations: [
+    SearchPage
+  ],
+
 })
 export class SearchPageModule {}

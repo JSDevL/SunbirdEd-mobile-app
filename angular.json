@@ -37,6 +37,26 @@
                 "glob": "**/*",
                 "input": "content-player",
                 "output": "content-player"
+              },
+              {
+                "glob": "**/*.*",
+                "input": "./node_modules/@project-sunbird/common-consumption-v8/assets",
+                "output": "./assets/common-consumption"
+              },
+              {
+                "glob": "**/*",
+                "input": "node_modules/@project-sunbird/sunbird-pdf-player-v8/lib/assets/",
+                "output": "/assets/"
+              },
+              {
+                "glob": "**/*.*",
+                "input": "./node_modules/@project-sunbird/discussions-ui-v8/assets",
+                "output": "./assets/discussion-ui"
+              },
+              {
+                "glob": "**/*",
+                "input": "./node_modules/@project-sunbird/sunbird-quml-player-v8/lib/assets/",
+                "output": "/assets/"
               }
             ],
 
@@ -46,19 +66,28 @@
               "vendor": true
             },
             "styles": [
+              "src/assets/styles/quml-styles/quml-carousel.css",
+              "node_modules/katex/dist/katex.min.css",
+              "node_modules/@project-sunbird/sb-styles/assets/_styles.scss",
+              "node_modules/@project-sunbird/discussions-ui-v8/assets/styles/global.scss",
               {
                 "input": "src/global.scss"
               }
             ],
-            "scripts": [],
-            "es5BrowserSupport": true
+            "scripts": [
+              "node_modules/@project-sunbird/telemetry-sdk/index.js",
+              "node_modules/epubjs/dist/epub.js",
+              "node_modules/katex/dist/katex.min.js"
+            ],
+            "es5BrowserSupport": true,
+            "preserveSymlinks": true
           },
           "configurations": {
             "production": {
               "fileReplacements": [
                 {
-                  "replace": "src/environments/environment.ts",
-                  "with": "src/environments/environment.prod.ts"
+                  "replace": "src/configuration/configuration.ts",
+                  "with": "src/configuration/configuration.prod.ts"
                 }
               ],
               "optimization": true,
@@ -74,7 +103,23 @@
                 {
                   "type": "initial",
                   "maximumWarning": "2mb",
-                  "maximumError": "5mb"
+                  "maximumError": "7mb"
+                }
+              ]
+            },
+            "hmr": {
+              "fileReplacements": [
+                {
+                  "replace": "src/configuration/configuration.ts",
+                  "with": "src/configuration/configuration.hmr.ts"
+                }
+              ]
+            },
+            "debug": {
+              "fileReplacements": [
+                {
+                  "replace": "src/configuration/configuration.ts",
+                  "with": "src/configuration/configuration.debug.ts"
                 }
               ]
             },
@@ -91,6 +136,10 @@
           "configurations": {
             "production": {
               "browserTarget": "app:build:production"
+            },
+            "hmr": {
+              "hmr": true,
+              "browserTarget": "app:build:hmr"
             },
             "ci": {
               "progress": false
@@ -147,6 +196,9 @@
           "configurations": {
             "production": {
               "browserTarget": "app:build:production"
+            },
+            "hmr": {
+              "browserTarget": "app:build:hmr"
             }
           }
         },
@@ -160,6 +212,10 @@
             "production": {
               "cordovaBuildTarget": "app:ionic-cordova-build:production",
               "devServerTarget": "app:serve:production"
+            },
+            "hmr": {
+              "cordovaBuildTarget": "app:ionic-cordova-build:hmr",
+              "devServerTarget": "app:serve:hmr"
             }
           }
         }

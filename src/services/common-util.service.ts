@@ -1,45 +1,61 @@
-import { Injectable, NgZone, OnDestroy, Inject } from '@angular/core';
+import { Injectable, NgZone, Inject } from '@angular/core';
 import {
     ToastController,
     LoadingController,
-    Events,
     PopoverController,
     Platform,
-    AlertController,
 } from '@ionic/angular';
-import { ToastOptions } from '@ionic/core';
+import { Events } from '@app/util/events';
 import { TranslateService } from '@ngx-translate/core';
-import { Observable } from 'rxjs-compat';
 import { Network } from '@ionic-native/network/ngx';
-import { SharedPreferences } from 'sunbird-sdk';
-
-import { PreferenceKey } from '@app/app/app.constant';
-import { appLanguages } from '@app/app/app.constant';
-
+import { WebView } from '@ionic-native/ionic-webview/ngx';
+import {
+    SharedPreferences, ProfileService, Profile, ProfileType,
+    CorrelationData, CachedItemRequestSourceFrom, LocationSearchCriteria, TelemetryService
+} from 'sunbird-sdk';
+import {
+    PreferenceKey, ProfileConstants, RouterLinks,
+    appLanguages, Location as loc, MaxAttempt, SwitchableTabsConfig
+} from '@app/app/app.constant';
 import { TelemetryGeneratorService } from '@app/services/telemetry-generator.service';
-import { InteractType, InteractSubtype } from '@app/services/telemetry-constants';
+import {
+    InteractType, InteractSubtype, PageId, Environment,
+    CorReleationDataType, ImpressionType, ObjectType
+} from '@app/services/telemetry-constants';
 import { SbGenericPopoverComponent } from '@app/app/components/popups/sb-generic-popover/sb-generic-popover.component';
 import { QRAlertCallBack, QRScannerAlert } from '@app/app/qrscanner-alert/qrscanner-alert.page';
-import { mapTo } from 'rxjs/operators/mapTo';
+import { Observable, merge } from 'rxjs';
+import { distinctUntilChanged, map, share, tap } from 'rxjs/operators';
+import { AppVersion } from '@ionic-native/app-version/ngx';
+import { SbPopoverComponent } from '@app/app/components/popups';
+import { AndroidPermissionsStatus } from './android-permissions/android-permission';
+import { Router } from '@angular/router';
+import { AndroidPermissionsService } from './android-permissions/android-permissions.service';
+import GraphemeSplitter from 'grapheme-splitter';
+import { ComingSoonMessageService } from './coming-soon-message.service';
+
+declare const FCMPlugin;
 export interface NetworkInfo {
     isNetworkAvailable: boolean;
 }
 @Injectable()
-export class CommonUtilService implements OnDestroy {
+export class CommonUtilService {
     public networkAvailability$: Observable<boolean>;
 
     networkInfo: NetworkInfo = {
-        isNetworkAvailable: false
+        isNetworkAvailable: navigator.onLine
     };
 
-    connectSubscription: any;
-
-    disconnectSubscription: any;
     private alert?: any;
+    googleCaptchaConfig = new Map();
     private _currentTabName: string;
+    appName: any;
+    private toast: any;
 
     constructor(
-        private toastCtrl: ToastController,
+        @Inject('SHARED_PREFERENCES') private preferences: SharedPreferences,
+        @Inject('PROFILE_SERVICE') private profileService: ProfileService,
+        @Inject('TELEMETRY_SERVICE') private telemetryService: TelemetryService,
         private translate: TranslateService,
         private loadingCtrl: LoadingController,
         private events: Events,
@@ -47,37 +63,54 @@ export class CommonUtilService implements OnDestroy {
         private network: Network,
         private zone: NgZone,
         private platform: Platform,
-        private alertCtrl: AlertController,
         private telemetryGeneratorService: TelemetryGeneratorService,
-        @Inject('SHARED_PREFERENCES') private preferences: SharedPreferences,
+        private webView: WebView,
+        private appVersion: AppVersion,
+        private router: Router,
+        private toastController: ToastController,
+        private permissionService: AndroidPermissionsService,
+        private comingSoonMessageService: ComingSoonMessageService
     ) {
-        this.listenForEvents();
-
-        this.networkAvailability$ = Observable.merge(
-            this.network.onConnect().pipe(mapTo(true)),
-            this.network.onDisconnect().pipe(mapTo(false))
+        this.networkAvailability$ = merge(
+            this.network.onChange().pipe(
+                map((v) => v.type === 'online'),
+            )
+        ).pipe(
+            distinctUntilChanged(),
+            share(),
+            tap((status) => {
+                this.zone.run(() => {
+                    this.networkInfo = {
+                        isNetworkAvailable: status
+                    };
+                });
+            })
         );
     }
 
-    listenForEvents() {
-        this.handleNetworkAvailability();
-    }
-
-    showToast(translationKey, isInactive?, cssToast?, duration?, position?) {
+    showToast(translationKey, isInactive?, cssToast?, duration?, position?, fields?: string | any) {
         if (Boolean(isInactive)) {
             return;
         }
 
-        this.translate.get(translationKey).subscribe(
+        let replaceObject: any = '';
+
+        if (typeof (fields) === 'object') {
+            replaceObject = fields;
+        } else {
+            replaceObject = { '%s': fields };
+        }
+
+        this.translate.get(translationKey, replaceObject).subscribe(
             async (translatedMsg: any) => {
-                const toastOptions: ToastOptions = {
+                const toastOptions = {
                     message: translatedMsg,
                     duration: duration ? duration : 3000,
                     position: position ? position : 'bottom',
                     cssClass: cssToast ? cssToast : ''
                 };
 
-                const toast = await this.toastCtrl.create(toastOptions);
+                const toast = await this.toastController.create(toastOptions);
                 await toast.present();
             }
         );
@@ -107,9 +140,9 @@ export class CommonUtilService implements OnDestroy {
     }
 
     /**
-     * @param {string} translations Stringified object of translations
-     * @param {string} defaultValue Fallback value if does not have translations
-     * @returns {string} Translated values or fallback value
+     * @param translations Stringified object of translations
+     * @param defaultValue Fallback value if does not have translations
+     * @returns Translated values or fallback value
      */
     getTranslatedValue(translations: string, defaultValue: string) {
         const availableTranslation = JSON.parse(translations);
@@ -121,20 +154,19 @@ export class CommonUtilService implements OnDestroy {
 
     /**
      * Returns Loading object with default config
-     * @returns {object} Loading object
+     * @returns Loading object
      */
-    // migration-TODO correct type later either use Promise<HTMLIonLoadingElement> or any
-    getLoader(): any {
+    getLoader(duration?, message?): any {
         return this.loadingCtrl.create({
-            duration: 30000,
-            spinner: 'crescent'
+            message,
+            duration: duration ? duration : 30000,
+            spinner: 'crescent',
+            cssClass: message ? 'custom-loader-message-class' : 'custom-loader-class'
         });
     }
 
     /**
      * Method to convert Array to Comma separated string
-     * @param {Array<string>} stringArray
-     * @returns {string}
      */
     arrayToString(stringArray: Array<string>): string {
         return stringArray.join(', ');
@@ -142,8 +174,8 @@ export class CommonUtilService implements OnDestroy {
 
     /**
      * It will change the app language to given code/name if it available locally
-     * @param {string} name Name of the language
-     * @param {string} code language code
+     * @param name Name of the language
+     * @param code language code
      */
     changeAppLanguage(name, code?) {
         if (!Boolean(code)) {
@@ -165,15 +197,24 @@ export class CommonUtilService implements OnDestroy {
      * Show popup with Try Again and Skip button.
      * @param source Page from alert got called
      */
-    async  showContentComingSoonAlert(source) {
-        if (source !== 'user-type-selection') {
-            this.afterOnBoardQRErrorAlert('ERROR_CONTENT_NOT_FOUND', 'CONTENT_IS_BEING_ADDED');
+    async showContentComingSoonAlert(source, content?, dialCode?) {
+        let message;
+        if (content) {
+            message = await this.comingSoonMessageService.getComingSoonMessage(content);
+        }
+        this.telemetryGeneratorService.generateInteractTelemetry(
+            InteractType.OTHER,
+            InteractSubtype.QR_CODE_COMINGSOON,
+            source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+            source ? source : PageId.HOME
+        );
+        if (source !== 'permission') {
+            this.afterOnBoardQRErrorAlert('ERROR_CONTENT_NOT_FOUND', (message || 'CONTENT_IS_BEING_ADDED'), source,
+                (dialCode ? dialCode : ''));
             return;
         }
-        // migration-TODO check for the type 
         let popOver: any;
         const self = this;
-        // migration-TODO
         const callback: QRAlertCallBack = {
             tryAgain() {
                 self.events.publish('event:showScanner', { pageName: source });
@@ -194,14 +235,14 @@ export class CommonUtilService implements OnDestroy {
             },
             cssClass: 'qr-alert-invalid'
         });
-        popOver.present();
+        await popOver.present();
     }
     /**
      * Show popup with Close.
      * @param heading Alert heading
      * @param message Alert message
      */
-    async afterOnBoardQRErrorAlert(heading, message) {
+    async afterOnBoardQRErrorAlert(heading, message, source?, dialCode?) {
         const qrAlert = await this.popOverCtrl.create({
             component: SbGenericPopoverComponent,
             componentProps: {
@@ -218,38 +259,35 @@ export class CommonUtilService implements OnDestroy {
             cssClass: 'sb-popover warning',
         });
         await qrAlert.present();
-    }
-    /**
-     * Its check for the network availability
-     * @returns status of the network
-     */
-    private handleNetworkAvailability(): boolean {
-        const updateNetworkAvailabilityStatus = (status: boolean) => {
-            this.zone.run(() => {
-                this.networkInfo.isNetworkAvailable = status;
-            });
-        };
-
-        if (this.network.type === 'none') {
-            updateNetworkAvailabilityStatus(false);
-        } else {
-            updateNetworkAvailabilityStatus(true);
-        }
-
-        this.connectSubscription = this.network.onDisconnect().subscribe(() => {
-            updateNetworkAvailabilityStatus(false);
-        });
-
-        this.disconnectSubscription = this.network.onConnect().subscribe(() => {
-            updateNetworkAvailabilityStatus(true);
-        });
-
-        return this.networkInfo.isNetworkAvailable;
-    }
-
-    ngOnDestroy() {
-        this.connectSubscription.unsubscribe();
-        this.disconnectSubscription.unsubscribe();
+        const corRelationList: CorrelationData[] = [{
+            id: this.translateMessage(heading) === this.translateMessage('INVALID_QR') ?
+                InteractSubtype.QR_CODE_INVALID : InteractSubtype.QR_NOT_LINKED,
+            type: CorReleationDataType.CHILD_UI
+        }];
+        corRelationList.push({ id: (dialCode ? dialCode : ''), type: ObjectType.QR });
+        // generate impression telemetry
+        this.telemetryGeneratorService.generateImpressionTelemetry(
+            InteractType.POPUP_LOADED, '',
+            source === PageId.ONBOARDING_PROFILE_PREFERENCES ? PageId.SCAN_OR_MANUAL : source,
+            source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+            (dialCode ? dialCode : ''),
+            (dialCode ? ObjectType.QR : undefined),
+            undefined,
+            undefined,
+            corRelationList
+        );
+        const { data } = await qrAlert.onDidDismiss();
+        // generate interact telemetry for close popup
+        this.telemetryGeneratorService.generateInteractTelemetry(
+            InteractType.SELECT_CLOSE,
+            data ? (data.isLeftButtonClicked ? InteractSubtype.CTA : InteractSubtype.CLOSE_ICON) : InteractSubtype.OUTSIDE,
+            source === PageId.ONBOARDING_PROFILE_PREFERENCES ? Environment.ONBOARDING : Environment.HOME,
+            source === PageId.ONBOARDING_PROFILE_PREFERENCES ? PageId.SCAN_OR_MANUAL : PageId.HOME,
+            undefined,
+            undefined,
+            undefined,
+            corRelationList
+        );
     }
 
     /**
@@ -271,73 +309,72 @@ export class CommonUtilService implements OnDestroy {
     }
 
     /**
-     * It returns whether it is RTL or not
-     */
-    isRTL() {
-        return this.platform.isRTL;
-    }
-
-    /**
      * Creates a popup asking whether to exit from app or not
      */
     async showExitPopUp(pageId: string, environment: string, isNavBack: boolean) {
-        //if (!this.alert) {
-        const alert = await this.popOverCtrl.create({
-            component: SbGenericPopoverComponent,
-            componentProps: {
-                sbPopoverHeading: this.translateMessage('BACK_TO_EXIT'),
-                sbPopoverMainTitle: '',
-                actionsButtons: [
-                    {
-                        btntext: this.translateMessage('YES'),
-                        btnClass: 'sb-btn sb-btn-sm  sb-btn-outline-info'
-                    }, {
-                        btntext: this.translateMessage('NO'),
-                        btnClass: 'popover-color'
-                    }
-                ],
-                icon: null
-            },
-            cssClass: 'sb-popover',
-        });
-        await alert.present();
-        const response = await alert.onDidDismiss();
-        if (response.data.isLeftButtonClicked == null) {
-            this.telemetryGeneratorService.generateInteractTelemetry(
-                InteractType.TOUCH,
-                InteractSubtype.NO_CLICKED,
-                environment,
-                pageId
-            );
-            return;
-        }
-        if (!response.data.isLeftButtonClicked) {
-            this.telemetryGeneratorService.generateInteractTelemetry(
-                InteractType.TOUCH,
-                InteractSubtype.NO_CLICKED,
-                environment,
-                pageId
-            );
-        } else {
-            this.telemetryGeneratorService.generateInteractTelemetry(
-                InteractType.TOUCH,
-                InteractSubtype.YES_CLICKED,
-                environment,
-                pageId
-            );
-            (navigator as any).app.exitApp();
-            this.telemetryGeneratorService.generateEndTelemetry('app', '', '', environment);
-        }
-        await this.alert.present();
-        this.telemetryGeneratorService.generateBackClickedTelemetry(pageId, environment, isNavBack);
-        return;
-        /*} else {
-            this.telemetryGeneratorService.generateBackClickedTelemetry(pageId, environment, isNavBack);
-            if (this.alert) {
-                await this.alert.dismiss();
-                this.alert = undefined;
+        if (!this.alert) {
+            this.alert = await this.popOverCtrl.create({
+                component: SbGenericPopoverComponent,
+                componentProps: {
+                    sbPopoverHeading: this.translateMessage('BACK_TO_EXIT'),
+                    sbPopoverMainTitle: '',
+                    actionsButtons: [
+                        {
+                            btntext: this.translateMessage('YES'),
+                            btnClass: 'sb-btn sb-btn-sm  sb-btn-outline-info'
+                        }, {
+                            btntext: this.translateMessage('NO'),
+                            btnClass: 'popover-color'
+                        }
+                    ],
+                    icon: null
+                },
+                cssClass: 'sb-popover',
+            });
+            await this.alert.present();
+            const { data } = await this.alert.onDidDismiss();
+            if (data === undefined) {
+                this.telemetryGeneratorService.generateInteractTelemetry(
+                    InteractType.TOUCH,
+                    InteractSubtype.NO_CLICKED,
+                    environment,
+                    pageId
+                );
+                return;
             }
-        }*/
+            if (data && !data.isLeftButtonClicked) {
+                this.telemetryGeneratorService.generateInteractTelemetry(
+                    InteractType.TOUCH,
+                    InteractSubtype.NO_CLICKED,
+                    environment,
+                    pageId
+                );
+            } else {
+                this.telemetryGeneratorService.generateInteractTelemetry(
+                    InteractType.TOUCH,
+                    InteractSubtype.YES_CLICKED,
+                    environment,
+                    pageId
+                );
+                (navigator as any).app.exitApp();
+                this.telemetryGeneratorService.generateEndTelemetry('app', '', '', environment);
+            }
+            this.telemetryGeneratorService.generateBackClickedTelemetry(pageId, environment, isNavBack);
+            return;
+        } else {
+            this.telemetryGeneratorService.generateBackClickedTelemetry(pageId, environment, isNavBack);
+            await this.alert.dismiss();
+            this.alert = undefined;
+        }
+    }
+
+    async getAppName() {
+        return this.appVersion.getAppName();
+    }
+
+    openUrlInBrowser(url) {
+        const options = 'hardwareback=yes,clearcache=no,zoom=no,toolbar=yes,disallowoverscroll=yes';
+        (window as any).cordova.InAppBrowser.open(url, '_blank', options);
     }
 
     fileSizeInMB(bytes) {
@@ -347,6 +384,15 @@ export class CommonUtilService implements OnDestroy {
         return (bytes / 1048576).toFixed(2);
     }
 
+    public deDupe<T>(array: T[], property): T[] {
+        if (!array) {
+            return [];
+        }
+        return array.filter((obj, pos, arr) => {
+            return arr.map(mapObj => mapObj[property]).indexOf(obj[property]) === pos;
+        });
+    }
+
     set currentTabName(tabName: string) {
         this._currentTabName = tabName;
     }
@@ -354,4 +400,336 @@ export class CommonUtilService implements OnDestroy {
     get currentTabName() {
         return this._currentTabName;
     }
+
+    convertFileSrc(img) {
+        if (img === null) {
+            return '';
+        } else {
+            return this.webView.convertFileSrc(img);
+        }
+    }
+
+    setGoogleCaptchaConfig(key, isEnabled) {
+        this.googleCaptchaConfig.set('key', key);
+        this.googleCaptchaConfig.set('isEnabled', isEnabled);
+    }
+
+    getGoogleCaptchaConfig() {
+        return this.googleCaptchaConfig;
+    }
+    // return org location details for logged in user
+    getOrgLocation(organisation: any) {
+        const location = { 'state': '', 'district': '', 'block': '' };
+        if (organisation.locations) {
+            for (let j = 0, l = organisation.locations.length; j < l; j++) {
+                if (organisation.locations[j]) {
+                    switch (organisation.locations[j].type) {
+                        case 'state':
+                            location.state = organisation.locations[j];
+                            break;
+
+                        case 'block':
+                            location.block = organisation.locations[j];
+                            break;
+
+                        case 'district':
+                            location.district = organisation.locations[j];
+                            break;
+
+                        default:
+                            console.log('default');
+                    }
+                }
+            }
+        }
+        return location;
+    }
+
+
+    getUserLocation(profile: any) {
+        const userLocation = {
+        };
+        if (profile && profile.userLocations && profile.userLocations.length) {
+            profile.userLocations.forEach((d) => {
+                userLocation[d.type] = d;
+            });
+        }
+
+        return userLocation;
+    }
+
+    isUserLocationAvalable(profile: any, locationMappingConfig): boolean {
+        const location = this.getUserLocation(profile.serverProfile ? profile.serverProfile : profile);
+        let isAvailable = false;
+        if (locationMappingConfig && profile && profile.profileType !== ProfileType.NONE) {
+            const requiredFileds = this.findAllRequiredFields(locationMappingConfig, profile.profileType);
+            isAvailable = requiredFileds.every(key => Object.keys(location).includes(key));
+        }
+        return isAvailable;
+    }
+
+    private findAllRequiredFields(locationMappingConfig, userType) {
+        return locationMappingConfig.find((m) => m.code === 'persona').children[userType].reduce((acc, config) => {
+            if (config.validations && config.validations.find((v) => v.type === 'required')) {
+              acc.push(config.code);
+            }
+            return acc;
+          }, []);
+    }
+
+    async isDeviceLocationAvailable(): Promise<boolean> {
+        const deviceLoc = await this.preferences.getString(PreferenceKey.DEVICE_LOCATION).toPromise();
+        return !!deviceLoc;
+    }
+
+    async isIpLocationAvailable(): Promise<boolean> {
+        const deviceLoc = await this.preferences.getString(PreferenceKey.IP_LOCATION).toPromise();
+        return !!deviceLoc;
+    }
+
+    handleToTopicBasedNotification() {
+        this.profileService.getActiveSessionProfile({ requiredFields: ProfileConstants.REQUIRED_FIELDS }).toPromise()
+            .then(async (response: Profile) => {
+                const profile = response;
+                const subscribeTopic: Array<string> = [];
+                subscribeTopic.push(profile.board[0]);
+                subscribeTopic.push(profile.profileType.concat('-', profile.board[0]));
+                profile.medium.forEach((m) => {
+                    subscribeTopic.push(profile.board[0].concat('-', m));
+                    profile.grade.forEach((g) => {
+                        subscribeTopic.push(profile.board[0].concat('-', g));
+                        subscribeTopic.push(profile.board[0].concat('-', m.concat('-', g)));
+                    });
+                });
+                await this.preferences.getString(PreferenceKey.DEVICE_LOCATION).subscribe((data) => {
+                    if (data) {
+                        subscribeTopic.push(JSON.parse(data).state.replace(/[^a-zA-Z0-9-_.~%]/gi, '-'));
+                        subscribeTopic.push(profile.profileType.concat('-', JSON.parse(data).state.replace(/[^a-zA-Z0-9-_.~%]/gi, '-')));
+                        subscribeTopic.push(JSON.parse(data).district.replace(/[^a-zA-Z0-9-_.~%]/gi, '-'));
+                    }
+                });
+                await this.preferences.getString(PreferenceKey.SUBSCRIBE_TOPICS).toPromise().then(async (data) => {
+                    const previuslySubscribeTopics = JSON.parse(data);
+                    await new Promise<undefined>((resolve, reject) => {
+                        FCMPlugin.unsubscribeFromTopic(previuslySubscribeTopics.join(','), resolve, reject);
+                    });
+                    await new Promise<undefined>((resolve, reject) => {
+                        FCMPlugin.subscribeToTopic(subscribeTopic.join(','), resolve, reject);
+                    });
+                }).catch(async (err) => {
+                    await new Promise<undefined>((resolve, reject) => {
+                        FCMPlugin.subscribeToTopic(subscribeTopic.join(','), resolve, reject);
+                    });
+                });
+                await this.preferences.putString(PreferenceKey.CURRENT_USER_PROFILE, JSON.stringify(profile)).toPromise();
+                await this.preferences.putString(PreferenceKey.SUBSCRIBE_TOPICS, JSON.stringify(subscribeTopic)).toPromise();
+            });
+    }
+
+    getFormattedDate(date: string | Date) {
+        const inputDate = new Date(date).toDateString();
+        const [, month, day, year] = inputDate.split(' ');
+        const formattedDate = [day, month, year].join('-');
+        return formattedDate;
+    }
+
+    getContentImg(content) {
+        const defaultImg = this.convertFileSrc('assets/imgs/ic_launcher.png');
+        return this.convertFileSrc(content.courseLogoUrl) ||
+            this.convertFileSrc(content.appIcon) || defaultImg;
+    }
+
+    isAccessibleForNonStudentRole(profileType) {
+        return profileType === ProfileType.TEACHER || profileType === ProfileType.OTHER || profileType === ProfileType.ADMIN;
+    }
+
+    public async getGivenPermissionStatus(permissions): Promise<AndroidPermissionsStatus> {
+        return (
+            await this.permissionService.checkPermissions([permissions]).toPromise()
+        )[permissions];
+    }
+
+    public async showSettingsPageToast(description: string, appName: string, pageId: string, isOnboardingCompleted: boolean) {
+        const toast = await this.toastController.create({
+            message: this.translateMessage(description, appName),
+            cssClass: 'permissionSettingToast',
+            buttons: [
+                {
+                    text: this.translateMessage('SETTINGS'),
+                    role: 'cancel',
+                    handler: () => {}
+                }
+            ],
+            position: 'bottom',
+            duration: 3000
+        });
+
+        toast.present();
+
+        toast.onWillDismiss().then((res) => {
+            if (res.role === 'cancel') {
+                this.telemetryGeneratorService.generateInteractTelemetry(
+                    InteractType.TOUCH,
+                    InteractSubtype.SETTINGS_CLICKED,
+                    isOnboardingCompleted ? Environment.HOME : Environment.ONBOARDING,
+                    pageId);
+                this.router.navigate([`/${RouterLinks.SETTINGS}/${RouterLinks.PERMISSION}`], { state: { changePermissionAccess: true } });
+            }
+        });
+    }
+
+    public async buildPermissionPopover(
+        handler: (selectedButton: string) => void,
+        appName: string, whichPermission: string,
+        permissionDescription: string, pageId, isOnboardingCompleted): Promise<HTMLIonPopoverElement> {
+        return this.popOverCtrl.create({
+            component: SbPopoverComponent,
+            componentProps: {
+                isNotShowCloseIcon: false,
+                sbPopoverHeading: this.translateMessage('PERMISSION_REQUIRED'),
+                sbPopoverMainTitle: this.translateMessage(whichPermission),
+                actionsButtons: [
+                    {
+                        btntext: this.translateMessage('NOT_NOW'),
+                        btnClass: 'popover-button-cancel',
+                    },
+                    {
+                        btntext: this.translateMessage('ALLOW'),
+                        btnClass: 'popover-button-allow',
+                    }
+                ],
+                handler,
+                img: {
+                    path: './assets/imgs/ic_folder_open.png',
+                },
+                metaInfo: this.translateMessage(permissionDescription, appName),
+            },
+            cssClass: 'sb-popover sb-popover-permissions primary dw-active-downloads-popover',
+        }).then((popover) => {
+            this.telemetryGeneratorService.generateImpressionTelemetry(
+                whichPermission === 'Camera' ? ImpressionType.CAMERA : ImpressionType.FILE_MANAGEMENT,
+                pageId,
+                PageId.PERMISSION_POPUP,
+                isOnboardingCompleted ? Environment.HOME : Environment.ONBOARDING
+            );
+            return popover;
+        });
+    }
+
+    async presentToastForOffline(msg: string) {
+        this.toast = await this.toastController.create({
+            duration: 3000,
+            message: this.translateMessage(msg),
+            buttons: [
+                {
+                    text: 'X',
+                    role: 'cancel',
+                    handler: () => {}
+                }
+            ],
+            position: 'top',
+            cssClass: ['toastHeader', 'offline']
+        });
+        await this.toast.present();
+        this.toast.onDidDismiss(() => {
+            this.toast = undefined;
+        });
+    }
+
+    extractInitial(name) {
+        let initial = '';
+        if (name) {
+            const splitter = new GraphemeSplitter();
+            const split: string[] = splitter.splitGraphemes(name.trim());
+            initial = split[0];
+        }
+        return initial;
+    }
+
+    async getStateList() {
+        const req: LocationSearchCriteria = {
+            from: CachedItemRequestSourceFrom.SERVER,
+            filters: {
+                type: loc.TYPE_STATE
+            }
+        };
+        try {
+            const stateList = await this.profileService.searchLocation(req).toPromise();
+            return stateList || [];
+        } catch {
+            return [];
+        }
+    }
+
+    async getDistrictList(id?: string, code?: string) {
+        const req: LocationSearchCriteria = {
+            from: CachedItemRequestSourceFrom.SERVER,
+            filters: {
+                type: loc.TYPE_DISTRICT,
+                parentId: id || undefined,
+                code: code || undefined
+            }
+        };
+        try {
+            const districtList = await this.profileService.searchLocation(req).toPromise();
+            return districtList || [];
+        } catch {
+            return [];
+        }
+    }
+
+    async handleAssessmentStatus(assessmentStatus) {
+        const maxAttempt: MaxAttempt = {
+            limitExceeded: false,
+            isCloseButtonClicked: false,
+            isLastAttempt: false
+        };
+        if (assessmentStatus && assessmentStatus.isContentDisabled) {
+            maxAttempt.limitExceeded = true;
+            this.showToast('FRMELMNTS_IMSG_LASTATTMPTEXCD');
+            return maxAttempt;
+        }
+        if (assessmentStatus && assessmentStatus.isLastAttempt) {
+            maxAttempt.isLastAttempt = true;
+            return await this.showAssessmentLastAttemptPopup(maxAttempt);
+        }
+        return maxAttempt;
+    }
+
+    async showAssessmentLastAttemptPopup(maxAttempt?: MaxAttempt) {
+        const confirm = await this.popOverCtrl.create({
+            component: SbPopoverComponent,
+            componentProps: {
+                sbPopoverMainTitle: this.translateMessage('ASSESSMENT_LAST_ATTEMPT_MESSAGE'),
+                showCloseBtn: true,
+                actionsButtons: [
+                    {
+                        btntext: this.translateMessage('CONTINUE'),
+                        btnClass: 'popover-color'
+                    },
+                ],
+            },
+            cssClass: 'sb-popover warning',
+            backdropDismiss: false
+        });
+        await confirm.present();
+        const { data } = await confirm.onDidDismiss();
+        if (data && data.canDelete) {
+            return maxAttempt;
+        } else {
+            maxAttempt.isCloseButtonClicked = true;
+            return maxAttempt;
+        }
+    }
+
+    public async populateGlobalCData() {
+        const currentSelectedTabs = await this.preferences.getString(PreferenceKey.SELECTED_SWITCHABLE_TABS_CONFIG).toPromise();
+        const correlationData: CorrelationData = {
+        type : 'Tabs',
+        id: (!currentSelectedTabs || currentSelectedTabs === SwitchableTabsConfig.RESOURCE_COURSE_TABS_CONFIG )?
+        'Library-Course' : 'Home-Discover'
+        };
+        this.telemetryService.populateGlobalCorRelationData([correlationData]);
+      }
+
 }

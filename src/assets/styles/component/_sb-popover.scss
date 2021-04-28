@@ -1,8 +1,13 @@
 /*Sb popover css*/
+@import "src/assets/styles/_variables.scss";
 .sb-popover {
   ion-backdrop {
     background-color: rgba(0, 0, 0, 0.59);
     opacity: 1;
+  }
+
+  .sb-popover ion-backdrop.backdrop-hide{
+    display: none;
   }
 
   //styles to align ion-popover to bottom
@@ -109,6 +114,20 @@
           font-weight: bold;
           text-align: center;
           @include padding(($base-block-space * 1), 0, 0, 0);
+          .sb-popover-download-content {
+            color: black !important;
+            font-size: 1.2rem !important;
+          }
+        }
+
+        .sb-popover-information {
+          color: $gray-800;
+          font-family: "Noto Sans";
+          font-weight: normal;
+          font-size: ($font-size-base + 6);
+          letter-spacing: 0;
+          line-height: 24px;
+          text-align: center;
         }
       }
     }
@@ -122,6 +141,8 @@
     @include padding(($base-block-space), ($base-block-space * 2), ($base-block-space * 3), ($base-block-space * 2));
     background: $white-color;
     .sb-popover-action-btn {
+      opacity: 1;
+      pointer-events: all;
       @include margin(null, 8px, null, null);
       height: $base-block-space * 4;
       border-radius: 2px;
@@ -141,6 +162,11 @@
       &.popover-color {
         background-color: $info-color;
       }
+    }
+    .sb-popover-action-btn[disabled]{
+      opacity: 0.5 !important;
+      pointer-events: none !important;
+      cursor: default;
     }
   }
 }
@@ -206,6 +232,29 @@
   }
 }
 
+.sb-popover.success {
+  .sb-popover-header {
+    background-color: #008840;
+    .sb-popover-toolbar .toolbar-background {
+      background-color: #008840;
+    }
+  }
+  .popover-content {
+    .sb-popover-items {
+      padding: 16px;
+      .icon-container {
+        ion-icon {
+          font-size: ($font-size-base * 2)+2;
+          color: #008840;
+        }
+      }
+    }
+  }
+  .sb-popover-footer .sb-popover-action-btn.popover-color {
+    background-color: #008840;
+  }
+}
+
 // For Permission Popup
 .sb-popover.sb-popover-permissions {
   .sb-popover-items {
@@ -241,17 +290,41 @@
     padding: 16px;
 
     .popover-button-cancel {
-      background-color: #fff;
+      background-color: map-get($colors, white);
       --background: white;
-      border: 1px solid #024f9d;
-      color: #024f9d !important;
+      border: 1px solid $blue;
+      color: $blue !important;
+      width: 150px;
+    }
+    @media only screen and (max-width : 720px) {
+    .popover-button-cancel-longlength { 
+      background-color: map-get($colors, white);
+      --background: white;
+      border: 1px solid $blue;
+      color: $blue !important;
+      width: 160px;
+      padding: 8px;
+    }
+    }
+    @media only screen and (min-width : 721px) and (max-width : 1025px) {
+      .popover-button-cancel-longlength { 
+        background-color: map-get($colors, white);
+        --background: white;
+        border: 1px solid $blue;
+        color: $blue !important;
+        width: 150px;
+    }
+  }
+    .popover-button-allow {
+      border: 1px solid $blue;
+      background-color: $blue;
       width: 150px;
     }
 
-    .popover-button-allow {
-      border: 1px solid #024f9d;
-      background-color: #024f9d;
-      width: 150px;
+    .popover-button-information {
+      padding: 4px 72px;
+      height: 36px;
+      border-radius: 2px !important;
     }
   }
 }
@@ -274,9 +347,56 @@
   }
 }
 
+.sb-popover.success {
+  .sb-popover-header,
+  .sb-popover-header .sb-popover-toolbar {
+    --background: #008840;
+  }
+}
+
 .sb-popover.danger {
   .sb-popover-header,
   .sb-popover-header .sb-popover-toolbar {
     --background: #{$danger-color};
   }
+}
+
+.sb-popup-header-info{
+  background-color: $primary-color;
+  color: $white-color;
+  padding: 16px;
+  text-align: center;
+  ion-icon{
+    float: right;
+    font-size: 24px;
+  }
+}
+
+.sb-popup-header-danger{
+  @extend .sb-popup-header-info;
+  background-color: $danger-color;
+}
+
+.sb-popup-header-success{
+  @extend .sb-popup-header-info;
+  background-color: $success-color;
+}
+
+.content-rating-alert{
+  --height: 100vh !important;
+  --max-height: 100% !important;
+  .popover-content{
+    --max-height: 100% !important;
+    background: map-get($colors, white) !important;
+    .rating-full-height {
+      height: 100vh !important;
+    }
+  }
+  .sb-popover-items{
+    overflow: auto;
+    .sb-popover-content-details{
+      height: calc(100vh - 150px);
+    }
+  }
+  
 }

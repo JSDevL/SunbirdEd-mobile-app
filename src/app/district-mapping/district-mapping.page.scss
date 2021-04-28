@@ -1,0 +1,211 @@
+@import "src/assets/styles/_variables.scss";
+@import "src/assets/styles/_custom-mixins";
+
+:host {
+    .input-container {
+        border: 0.5px solid map-get($colors, primary_black);
+        padding: 11px;
+
+        .input {
+            border: map-get($colors, white);
+            outline: none;
+        }
+
+        .input-icon {
+            float: right;
+            font-size: 20px;
+            color: map-get($colors, primary_black);
+        }
+    }
+
+    .font-size-13{
+      font-size: 13px;
+    }
+    
+    .error-input{
+      border-bottom: 1.5px solid map-get($colors, bright_red_e7) !important;
+    }
+
+    .label {
+        font-size: 13px;
+        padding-left: 16px;
+        color: map-get($colors, primary_black);
+    }
+
+    .name {
+        padding-bottom: 16px;
+        padding-bottom: 22px;
+    }
+
+    input:-internal-autofill-selected {
+        background-color: white !important;
+    }
+
+    .margin-top-6 {
+        margin-top: 6vh;
+    }
+
+    .name-feild {
+        width: 100%;
+        border-right: white;
+        border-top: white;
+        border-left: white;
+        border-bottom: 0.5px solid map-get($colors, primary_black);
+        padding-bottom: 6px;
+        padding-left: 11px;
+        font-size: 13px;
+        outline: none;
+    }
+
+    input::placeholder {
+        padding-left: 16px;
+    }
+
+    .oneline-input {
+        border-left: white;
+        border-right: white;
+        border-top: white;
+        border-bottom: 0.5px solid map-get($colors, primary_black);
+        width:100%;
+        outline: none;
+    }
+
+    .disableInput {
+        background-color: map-get($colors, white_eb);
+    }
+    .danger {
+        color: red;
+    }
+
+    .disabled-button {
+        opacity: 0.5;
+    }
+
+    .input-label {
+        font-weight: 200;
+        font-size: 14px;
+        color: map-get($colors, gray_79);
+    }
+
+    .margin-top {
+        margin-top: 20px;
+    }
+
+    .margin-bottom {
+        margin-bottom: 20px;
+    }
+
+    .showList {
+        box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+        max-height: 200px;
+        overflow-y: scroll;
+
+        ul {
+            list-style-type: none;
+        }
+
+        li {
+            padding: 8px 0px 8px 8px;
+        }
+    }
+
+    .footer {
+        width: 100%;
+        bottom: 0;
+    }
+
+    .heading {
+        color: $blue;
+        text-align: center;
+        font-size: 14px;
+        margin: 16px 0px 16px 0px;
+    }
+
+    .sub-heading {
+        color: map-get($colors, primary_black);
+        font-size: 12px;
+        margin: 16px 0px 25px 0px;
+    }
+
+    .top-back-button {
+        font-size: 20px;
+        @include rtl() {
+            float: right;
+        }
+    }
+
+    ::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+        box-shadow: inset 0 0 5px grey;
+        border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: map-get($colors, gray_81);
+        border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: map-get($colors, gray_ba);
+    }
+
+    .block-button-save{
+        color: white;
+        background-color: $blue;
+        font-size: 16px;
+        padding: 8px 0;
+        margin-left: 18px;
+        border: 2px solid $blue;
+        width: 45%;
+      }
+      .block-button-clear{
+        color: $blue;
+        background-color: white;
+        font-size: 16px;
+        padding: 8px 0;
+        border: 2px solid $blue;
+        width: 45%;
+        margin-left: 0.7rem;
+      }
+    .arrow-icon {
+        right: 15px;
+        top: 50%;
+        width: 22px;
+        float: right;
+        @include rtl {
+            float: left;
+            margin-left: 10px;
+        }
+        &.animate {
+            position: relative;
+            animation: upDownAnimate 5s linear infinite;
+            animation-duration: 0.9s;
+        }
+    }
+    .btn-info{
+        padding: 20px
+    }
+    .preference-info{
+        font-size: 18px;
+        position: absolute;
+        margin-left: 10px;
+    }
+
+    .blur-clear-btn{
+        color: $primary-100 !important;
+        border-color: 2px solid $primary-100 !important;
+    }
+    .blur-save-btn{
+        background-color: map-get($colors, light_blue_color) !important;
+        border-color: 2px solid $primary-100 !important;
+    }
+}
+
+@keyframes upDownAnimate {
+    0% {right: 0;}
+    50% {right: 10px;}
+    100% {right: 0;}
+}

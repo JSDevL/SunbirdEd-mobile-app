@@ -1,9 +1,8 @@
-import { Component, OnInit, Inject, Input } from '@angular/core';
-import { NavParams, Platform, PopoverController } from '@ionic/angular';
-import { GenerateOtpRequest, ProfileService, VerifyOtpRequest } from 'sunbird-sdk';
-
+import { Component, Inject, Input, OnInit } from '@angular/core';
 import { ProfileConstants } from '@app/app/app.constant';
 import { CommonUtilService } from '@app/services/common-util.service';
+import { MenuController, NavParams, Platform, PopoverController } from '@ionic/angular';
+import { GenerateOtpRequest, HttpClientError, ProfileService, VerifyOtpRequest } from 'sunbird-sdk';
 
 @Component({
   selector: 'app-edit-contact-verify-popup',
@@ -14,23 +13,26 @@ export class EditContactVerifyPopupComponent implements OnInit {
   /**
    * Key may be phone or email depending on the verification flow from which it is called
    */
+  @Input() userId: string;
   @Input() key: string;
   @Input() title: string;
   @Input() description: string;
   @Input() type: string;
-  otp;
+  otp = '';
   invalidOtp = false;
   enableResend = true;
   unregisterBackButton: any;
-  loader: any;
+  remainingAttempts: any;
 
   constructor(
+    @Inject('PROFILE_SERVICE') private profileService: ProfileService,
     private navParams: NavParams,
     public popOverCtrl: PopoverController,
     public platform: Platform,
-    @Inject('PROFILE_SERVICE') private profileService: ProfileService,
-    private commonUtilService: CommonUtilService
+    private commonUtilService: CommonUtilService,
+    private menuCtrl: MenuController
   ) {
+    this.userId = this.navParams.get('userId');
     this.key = this.navParams.get('key');
     this.title = this.navParams.get('title');
     this.description = this.navParams.get('description');
@@ -38,10 +40,10 @@ export class EditContactVerifyPopupComponent implements OnInit {
 
   }
 
-  ngOnInit() {
-  }
+  ngOnInit() { }
 
   ionViewWillEnter() {
+    this.menuCtrl.enable(false);
     this.unregisterBackButton = this.platform.backButton.subscribeWithPriority(11, () => {
       this.popOverCtrl.dismiss();
       this.unregisterBackButton.unsubscribe();
@@ -69,16 +71,25 @@ export class EditContactVerifyPopupComponent implements OnInit {
           this.popOverCtrl.dismiss({ OTPSuccess: true, value: this.key });
         })
         .catch(error => {
-          if (error.response.body.params.err === 'ERROR_INVALID_OTP') {
-            this.invalidOtp = true;
+          if (HttpClientError.isInstance(error)
+           && error.response.responseCode === 400) {
+            if (typeof error.response.body  === 'object') {
+              if (error.response.body.params.err === 'OTP_VERIFICATION_FAILED' &&
+              error.response.body.result.remainingAttempt > 0) {
+                this.remainingAttempts = error.response.body.result.remainingAttempt;
+                this.otp = '';
+                this.invalidOtp = true;
+              } else {
+                this.popOverCtrl.dismiss();
+                this.commonUtilService.showToast('OTP_FAILED');
+              }
+            }
           }
         });
     } else {
       this.commonUtilService.showToast('INTERNET_CONNECTIVITY_NEEDED');
     }
   }
-
-
 
   async resendOTP() {
     if (this.commonUtilService.networkInfo.isNetworkAvailable) {
@@ -95,15 +106,20 @@ export class EditContactVerifyPopupComponent implements OnInit {
           type: ProfileConstants.CONTACT_TYPE_EMAIL
         };
       }
-      this.loader = await this.commonUtilService.getLoader();
-      await this.loader.present();
+      let loader = await this.commonUtilService.getLoader();
+      await loader.present();
       this.profileService.generateOTP(req).toPromise()
         .then(async () => {
-          this.description = this.commonUtilService.translateMessage('OTP_RESENT');
-          await this.loader.dismiss();
+          this.commonUtilService.showToast('OTP_RESENT');
+          await loader.dismiss();
+          loader = undefined;
         })
-        .catch(async () => {
-          await this.loader.dismiss();
+        .catch(async (e) => {
+          if (loader) {
+            this.commonUtilService.showToast('SOMETHING_WENT_WRONG');
+            await loader.dismiss();
+            loader = undefined;
+          }
         });
     } else {
       this.commonUtilService.showToast('INTERNET_CONNECTIVITY_NEEDED');
@@ -115,6 +131,7 @@ export class EditContactVerifyPopupComponent implements OnInit {
   }
 
   ionViewWillLeave() {
+    this.menuCtrl.enable(true);
     if (this.unregisterBackButton) {
       this.unregisterBackButton.unsubscribe();
     }

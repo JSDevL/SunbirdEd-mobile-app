@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@angular/core';
+import {Inject, Injectable} from '@angular/core';
 import {
     CorrelationData,
     Rollup,
@@ -6,29 +6,70 @@ import {
     TelemetryErrorRequest,
     TelemetryImpressionRequest,
     TelemetryInteractRequest,
+    TelemetryAuditRequest,
     TelemetryLogRequest,
     TelemetryObject,
     TelemetryService,
     TelemetryStartRequest,
     TelemetryInterruptRequest,
-    DeviceSpecification
+    DeviceSpecification,
+    Actor,
+    AuditState,
+    TelemetrySummaryRequest
 } from 'sunbird-sdk';
-import { Map } from '../app/telemetryutil';
-import { Environment, ImpressionType, InteractSubtype, InteractType, Mode, PageId } from './telemetry-constants';
-import { MimeType } from '../app/app.constant';
+import {Map} from '../app/telemetryutil';
+import {
+    Environment, ImpressionType, InteractSubtype, InteractType,
+    Mode, PageId, CorReleationDataType, ID, ImpressionSubtype
+} from './telemetry-constants';
+import {MimeType} from '../app/app.constant';
+import {ContentUtil} from '@app/util/content-util';
+import {SbProgressLoader} from '../services/sb-progress-loader.service';
 
 @Injectable()
 export class TelemetryGeneratorService {
-    constructor(@Inject('TELEMETRY_SERVICE') private telemetryService: TelemetryService) {
+    constructor(
+        @Inject('TELEMETRY_SERVICE') private telemetryService: TelemetryService,
+        private sbProgressLoader: SbProgressLoader,
+    ) {
+    }
+
+    generateAuditTelemetry(env, currentSate?, updatedProperties?, type?, objId?, objType?, objVer?, correlationData?, objRollup?) {
+        const telemetryAuditRequest: TelemetryAuditRequest = {
+            env: env ? env : undefined,
+            currentState: currentSate ? currentSate : undefined,
+            updatedProperties: updatedProperties ? updatedProperties : undefined,
+            type: type ? type : undefined,
+            objId: objId ? objId : undefined,
+            objType: objType ? objType : undefined,
+            objVer: objVer ? objVer : undefined,
+            rollUp: objRollup || {},
+            correlationData: correlationData ? correlationData : undefined,
+            actor: new Actor()
+        };
+        this.telemetryService.audit(telemetryAuditRequest).subscribe();
     }
 
     generateInteractTelemetry(interactType, interactSubtype, env, pageId, object?: TelemetryObject, values?: Map,
-        rollup?: Rollup, corRelationList?: Array<CorrelationData>) {
+                              rollup?: Rollup, corRelationList?: Array<CorrelationData>, id?: string) {
+        const hash: string =
+            JSON.stringify({ pageId: pageId || undefined });
+        if (
+            Array.from(this.sbProgressLoader.contexts.entries()).some(([_, context]) => {
+                if (context.ignoreTelemetry && context.ignoreTelemetry.when && context.ignoreTelemetry.when.interact) {
+                    return !!hash.match(context.ignoreTelemetry.when.interact);
+                }
+                return false;
+            })
+        ) {
+            return;
+        }
+
         const telemetryInteractRequest = new TelemetryInteractRequest();
         telemetryInteractRequest.type = interactType;
         telemetryInteractRequest.subType = interactSubtype;
         telemetryInteractRequest.pageId = pageId;
-        telemetryInteractRequest.id = pageId;
+        telemetryInteractRequest.id = id ? id : pageId;
         telemetryInteractRequest.env = env;
         if (values !== null) {
             telemetryInteractRequest.valueMap = values;
@@ -54,12 +95,25 @@ export class TelemetryGeneratorService {
         this.telemetryService.interact(telemetryInteractRequest).subscribe();
     }
 
-    generateImpressionTelemetry(type, subtype, pageid, env, objectId?: string, objectType?: string,
-        objectVersion?: string, rollup?: Rollup, corRelationList?: Array<CorrelationData>) {
+    generateImpressionTelemetry(type, subtype, pageId, env, objectId?: string, objectType?: string,
+                                objectVersion?: string, rollup?: Rollup, corRelationList?: Array<CorrelationData>) {
+        const hash: string =
+            JSON.stringify({ pageId: pageId || undefined });
+        if (
+            Array.from(this.sbProgressLoader.contexts.entries()).some(([_, context]) => {
+                if (context.ignoreTelemetry && context.ignoreTelemetry.when && context.ignoreTelemetry.when.impression) {
+                    return !!hash.match(context.ignoreTelemetry.when.impression);
+                }
+                return false;
+            })
+        ) {
+            return;
+        }
+
         const telemetryImpressionRequest = new TelemetryImpressionRequest();
         telemetryImpressionRequest.type = type;
         telemetryImpressionRequest.subType = subtype;
-        telemetryImpressionRequest.pageId = pageid;
+        telemetryImpressionRequest.pageId = pageId || PageId.HOME;
         telemetryImpressionRequest.env = env;
         telemetryImpressionRequest.objId = objectId ? objectId : '';
         telemetryImpressionRequest.objType = objectType ? objectType : '';
@@ -126,6 +180,37 @@ export class TelemetryGeneratorService {
         this.telemetryService.start(telemetryStartRequest).subscribe();
     }
 
+    generateSummaryTelemetry(type, starttime, endtime, timpespent,
+                             pageviews, interactions, env, object?: TelemetryObject,
+                             rollup?: Rollup, corRelationList?: Array<CorrelationData>) {
+        const telemetrySummaryRequest = new TelemetrySummaryRequest();
+        telemetrySummaryRequest.type = type;
+        telemetrySummaryRequest.starttime = starttime;
+        telemetrySummaryRequest.endtime = endtime;
+        telemetrySummaryRequest.timespent = timpespent;
+        telemetrySummaryRequest.pageviews = pageviews;
+        telemetrySummaryRequest.interactions = interactions;
+        telemetrySummaryRequest.mode = Mode.PLAY;
+        if (object && object.id) {
+            telemetrySummaryRequest.objId = object.id;
+        }
+
+        if (object && object.type) {
+            telemetrySummaryRequest.objType = object.type;
+        }
+
+        if (object && object.version) {
+            telemetrySummaryRequest.objVer = object.version + '';
+        }
+        if (rollup !== undefined) {
+            telemetrySummaryRequest.rollup = rollup;
+        }
+        if (corRelationList !== undefined) {
+            telemetrySummaryRequest.correlationData = corRelationList;
+        }
+        this.telemetryService.summary(telemetrySummaryRequest).subscribe();
+    }
+
     generateLogEvent(logLevel, message, env, type, params: Array<any>) {
         const telemetryLogRequest = new TelemetryLogRequest();
         telemetryLogRequest.level = logLevel;
@@ -135,6 +220,7 @@ export class TelemetryGeneratorService {
         telemetryLogRequest.params = params;
         this.telemetryService.log(telemetryLogRequest).subscribe();
     }
+
     genererateAppStartTelemetry(deviceSpec: DeviceSpecification) {
         const telemetryStartRequest = new TelemetryStartRequest();
         telemetryStartRequest.type = 'app';
@@ -150,13 +236,6 @@ export class TelemetryGeneratorService {
         this.telemetryService.interrupt(telemetryInterruptRequest).subscribe();
     }
 
-    // generateExDataTelemetry(type, data) {
-    //     const exData = new ExData();
-    //     exData.type = type;
-    //     exData.data = data;
-    //     this.telemetryService.exdata(exData);
-    // }
-
     generateErrorTelemetry(env, errCode, errorType, pageId, stackTrace) {
         const telemetryErrorRequest = new TelemetryErrorRequest();
         // telemetryErrorRequest.env = env;
@@ -167,7 +246,7 @@ export class TelemetryGeneratorService {
         this.telemetryService.error(telemetryErrorRequest).subscribe();
     }
 
-    generateBackClickedTelemetry(pageId, env, isNavBack: boolean, identifier?: string, corRelationList?) {
+    generateBackClickedTelemetry(pageId, env, isNavBack: boolean, identifier?: string, corRelationList?, objRollup?, telemetryObject?) {
         const values = new Map();
         if (identifier) {
             values['identifier'] = identifier;
@@ -177,10 +256,10 @@ export class TelemetryGeneratorService {
             isNavBack ? InteractSubtype.NAV_BACK_CLICKED : InteractSubtype.DEVICE_BACK_CLICKED,
             env,
             pageId,
-            undefined,
+            telemetryObject,
             values,
+            objRollup,
             corRelationList);
-
     }
 
     generatePageViewTelemetry(pageId, env, subType?) {
@@ -193,40 +272,40 @@ export class TelemetryGeneratorService {
         const values = new Map();
         values['isFirstTime'] = isFirstTime;
         values['size'] = content.size;
-        const telemetryObject = new TelemetryObject(content.identifier || content.contentId, content.contentType, content.pkgVersion);
+        const telemetryObject = ContentUtil.getTelemetryObject(content);
         this.generateInteractTelemetry(
             InteractType.OTHER,
             InteractSubtype.LOADING_SPINE,
             Environment.HOME,
             PageId.DOWNLOAD_SPINE,
             telemetryObject,
-            values);
+            values,
+            ContentUtil.generateRollUp(undefined, telemetryObject.id));
     }
 
     generateCancelDownloadTelemetry(content: any) {
         const values = new Map();
-        const telemetryObject = new TelemetryObject(content.identifier || content.contentId, content.contentType, content.pkgVersion);
         this.generateInteractTelemetry(
             InteractType.TOUCH,
             InteractSubtype.CANCEL_CLICKED,
             Environment.HOME,
             PageId.DOWNLOAD_SPINE,
-            telemetryObject,
+            ContentUtil.getTelemetryObject(content),
             values);
     }
 
-    generateDownloadAllClickTelemetry(pageId, content, downloadingIdentifier, childrenCount) {
+    generateDownloadAllClickTelemetry(pageId, content, downloadingIdentifier, childrenCount, rollup?, corelationList?) {
         const values = new Map();
         values['downloadingIdentifers'] = downloadingIdentifier;
         values['childrenCount'] = childrenCount;
-        const telemetryObject = new TelemetryObject(content.identifier || content.contentId, content.contentType, content.pkgVersion);
         this.generateInteractTelemetry(
             InteractType.TOUCH,
             InteractSubtype.DOWNLOAD_ALL_CLICKED,
             Environment.HOME,
             pageId,
-            telemetryObject,
-            values);
+            ContentUtil.getTelemetryObject(content),
+            values,
+            rollup, corelationList);
     }
 
     generatePullToRefreshTelemetry(pageId, env) {
@@ -239,11 +318,11 @@ export class TelemetryGeneratorService {
     }
 
     /**
-   * method generates telemetry on click Read less or Read more
-   * @param {string} param string as read less or read more
-   * @param {object} objRollup object roll up
-   * @param corRelationList corelationList
-   */
+     * method generates telemetry on click Read less or Read more
+     * @param string param string as read less or read more
+     * @param object objRollup object roll up
+     * @param corRelationList corelationList
+     */
     readLessOrReadMore(param, objRollup, corRelationList, telemetryObject) {
         this.generateInteractTelemetry(InteractType.TOUCH,
             param = 'READ_MORE' === param ? InteractSubtype.READ_MORE_CLICKED : InteractSubtype.READ_LESS_CLICKED,
@@ -255,19 +334,45 @@ export class TelemetryGeneratorService {
             corRelationList);
     }
 
-    generateProfilePopulatedTelemetry(pageId, profile, mode, env?) {
+    generateProfilePopulatedTelemetry(pageId, profile, mode, env?, source?) {
         const values = new Map();
         values['board'] = profile.board[0];
         values['medium'] = profile.medium;
         values['grade'] = profile.grade;
         values['mode'] = mode;
+        const corRelationList: Array<CorrelationData> = [];
+        corRelationList.push({ id: profile.board ? profile.board.join(',') : '', type: CorReleationDataType.BOARD });
+        corRelationList.push({ id: profile.medium ? profile.medium.join(',') : '' , type: CorReleationDataType.MEDIUM });
+        corRelationList.push({ id: profile.grade ? profile.grade.join(',') : '', type: CorReleationDataType.CLASS });
+        corRelationList.push({ id: profile.profileType, type: CorReleationDataType.USERTYPE });
+        if (source) {
+            corRelationList.push({id: source, type: CorReleationDataType.SOURCE});
+        }
         this.generateInteractTelemetry(
             InteractType.OTHER,
             InteractSubtype.PROFILE_ATTRIBUTE_POPULATION,
             env ? env : Environment.HOME,
             pageId,
             undefined,
-            values);
+            values, undefined,
+            corRelationList);
+    }
+
+    generateAppLaunchTelemetry(type: string, source?: string) {
+        const corRelationList: Array<CorrelationData> = [{
+            id: ContentUtil.extractBaseUrl(source),
+            type: CorReleationDataType.SOURCE
+          }];
+        this.generateInteractTelemetry(
+            type,
+            '',
+            Environment.HOME,
+            Environment.HOME,
+            undefined,
+            { source },
+            undefined,
+            corRelationList,
+            ID.APP_LAUNCH);
     }
 
     generateExtraInfoTelemetry(values: Map, pageId) {
@@ -287,13 +392,12 @@ export class TelemetryGeneratorService {
             const kbsofar = (content.size / 100) * Number(downloadProgress);
             values['downloadedSoFar'] = this.transform(kbsofar);
         }
-        const telemetryObject = new TelemetryObject(content.identifier || content.contentId, content.contentType, content.pkgVersion);
         this.generateInteractTelemetry(
             InteractType.TOUCH,
             InteractSubtype.CANCEL_CLICKED,
             Environment.HOME,
             PageId.CONTENT_DETAIL,
-            telemetryObject,
+            ContentUtil.getTelemetryObject(content),
             values);
     }
 
@@ -325,17 +429,91 @@ export class TelemetryGeneratorService {
         return mimeType === MimeType.COLLECTION;
     }
 
-    generateStartSheenAnimationTelemetry() {
-        this.generateInteractTelemetry(InteractType.OTHER,
-            InteractSubtype.SHEEN_ANIMATION_START,
+    generateUtmInfoTelemetry(values: Map, pageId, object?: TelemetryObject, corRelationData?) {
+        this.generateInteractTelemetry(
+            InteractType.OTHER,
+            InteractSubtype.UTM_INFO,
             Environment.HOME,
-            PageId.LIBRARY);
+            pageId,
+            object,
+            values,
+            undefined,
+            corRelationData);
     }
 
-    generateEndSheenAnimationTelemetry() {
-        this.generateInteractTelemetry(InteractType.OTHER,
-            InteractSubtype.SHEEN_ANIMATION_END,
+    /* Fast loading telemetry generator */
+    generatefastLoadingTelemetry(interactSubtype, pageId, telemetryObject?, objRollup?, value?, corRelationList?) {
+        this.generateInteractTelemetry(
+            InteractType.OTHER,
+            interactSubtype,
             Environment.HOME,
-            PageId.LIBRARY);
+            pageId,
+            telemetryObject,
+            value,
+            objRollup,
+            corRelationList
+        );
+    }
+
+    generateNotificationClickedTelemetry(type, pageId, value?, corRelationList?) {
+        this.generateInteractTelemetry(
+            type,
+            '',
+            Environment.HOME,
+            pageId,
+            undefined,
+            value,
+            undefined,
+            corRelationList,
+            ID.NOTIFICATION_CLICKED
+        );
+    }
+
+
+    /* New Telemetry */
+    generateBackClickedNewTelemetry(isDeviceBack, env, pageId) {
+        this.generateInteractTelemetry(
+            InteractType.SELECT_BACK,
+            isDeviceBack ? InteractSubtype.DEVICE : InteractSubtype.UI,
+            env,
+            pageId
+        );
+    }
+
+    generatePageLoadedTelemetry(pageId, env, objId?, objType?, objversion?, rollup?, correlationList?) {
+        this.generateImpressionTelemetry(
+            ImpressionType.PAGE_LOADED,
+            pageId === PageId.LOCATION ? ImpressionSubtype.AUTO : '',
+            pageId,
+            env,
+            objId,
+            objType,
+            objversion,
+            rollup,
+            correlationList
+        );
+    }
+
+    generateNewExprienceSwitchTelemetry(pageId, subType, corRelationInfo) {
+        const corRelationList: Array<CorrelationData> = [];
+        corRelationList.push({
+            type: CorReleationDataType.FIRST_TIME_USER,
+            id: corRelationInfo['isNewUser'] + ''
+        });
+        corRelationList.push({
+            type: CorReleationDataType.USERTYPE,
+            id:  corRelationInfo['userType']
+        });
+        this.generateInteractTelemetry(
+            InteractType.NEW_EXPERIENCE,
+            subType,
+            Environment.HOME,
+            pageId,
+            undefined,
+            undefined,
+            undefined,
+            corRelationList,
+            ID.SWITCH_CLICKED
+          );
     }
 }

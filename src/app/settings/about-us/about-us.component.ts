@@ -14,11 +14,13 @@ import {
   Environment,
   ImpressionType
 } from '../../../services';
-import { ContentType, AudienceFilter, RouterLinks } from '../../app.constant';
+import { AudienceFilter, RouterLinks, GenericAppConfig, PrimaryCategory } from '../../app.constant';
 import { Router } from '@angular/router';
 import { Location } from '@angular/common';
 import { AppVersion } from '@ionic-native/app-version/ngx';
-
+import { Subscription } from 'rxjs';
+import { Platform } from '@ionic/angular';
+import { map } from 'rxjs/operators';
 const KEY_SUNBIRD_CONFIG_FILE_PATH = 'sunbird_config_file_path';
 
 @Component({
@@ -36,6 +38,7 @@ export class AboutUsComponent implements OnInit {
     showBurgerMenu: false,
     actionButtons: []
   };
+  backButtonFunc: Subscription;
 
   constructor(
     @Inject('PROFILE_SERVICE') private profileService: ProfileService,
@@ -49,7 +52,8 @@ export class AboutUsComponent implements OnInit {
     private headerService: AppHeaderService,
     private router: Router,
     private location: Location,
-    private appVersion: AppVersion
+    private appVersion: AppVersion,
+    private platform: Platform,
   ) {
   }
 
@@ -59,6 +63,7 @@ export class AboutUsComponent implements OnInit {
     this.headerConfig.showHeader = false;
     this.headerConfig.showBurgerMenu = false;
     this.headerService.updatePageConfig(this.headerConfig);
+    this.handleBackButton();
   }
 
   ngOnInit() {
@@ -75,6 +80,12 @@ export class AboutUsComponent implements OnInit {
       });
   }
 
+  ionViewWillLeave() {
+    if (this.backButtonFunc) {
+      this.backButtonFunc.unsubscribe();
+    }
+  }
+
   ionViewDidLeave() {
     (<any>window).supportfile.removeFile(() => {
     }, (error) => {
@@ -83,27 +94,30 @@ export class AboutUsComponent implements OnInit {
   }
 
   async shareInformation() {
-    this.generateInteractTelemetry(InteractType.TOUCH, InteractSubtype.SUPPORT_CLICKED);
+    this.generateInteractTelemetry(InteractType.TOUCH, InteractSubtype.SHARE_CLICKED);
     const allUserProfileRequest: GetAllProfileRequest = {
       local: true,
       server: true
     };
     const contentRequest: ContentRequest = {
-      contentTypes: ContentType.FOR_DOWNLOADED_TAB,
+      primaryCategories: PrimaryCategory.FOR_DOWNLOADED_TAB,
       audience: AudienceFilter.GUEST_TEACHER
     };
-    const getUserCount = await this.profileService.getAllProfiles(allUserProfileRequest).map((profile) => profile.length).toPromise();
-    const getLocalContentCount = await this.contentService.getContents(contentRequest)
-      .map((contentCount) => contentCount.length).toPromise();
-
-    (<any>window).supportfile.shareSunbirdConfigurations(getUserCount, getLocalContentCount, (result) => {
-      const loader = this.commonUtilService.getLoader();
-      loader.present();
+    const getUserCount = await this.profileService.getAllProfiles(allUserProfileRequest).pipe(
+      map((profile) => profile.length)
+    ).toPromise();
+    const getLocalContentCount = await this.contentService.getContents(contentRequest).pipe(
+      map((contentCount) => contentCount.length)
+    ).toPromise();
+    let loader = await this.commonUtilService.getLoader();
+    (<any>window).supportfile.shareSunbirdConfigurations(getUserCount, getLocalContentCount, async (result) => {
+      await loader.present();
       this.preferences.putString(KEY_SUNBIRD_CONFIG_FILE_PATH, result).toPromise()
         .then((res) => {
           this.preferences.getString(KEY_SUNBIRD_CONFIG_FILE_PATH).toPromise()
-            .then(val => {
-              loader.dismiss();
+            .then(async val => {
+              await loader.dismiss();
+              loader = undefined;
               if (Boolean(val)) {
                 this.fileUrl = 'file://' + val;
 
@@ -113,24 +127,15 @@ export class AboutUsComponent implements OnInit {
                   console.error('Sharing Data is not possible', error);
                 });
               }
-
             });
         });
-    }, (error) => {
+    }, async (error) => {
+      if (loader) {
+        await loader.dismiss();
+        loader = undefined;
+      }
       console.error('ERROR - ' + error);
     });
-  }
-
-  aboutApp() {
-    this.router.navigate([`/${RouterLinks.SETTINGS}/${RouterLinks.ABOUT_APP}`]);
-  }
-
-  termsOfService() {
-    this.router.navigate([`/${RouterLinks.SETTINGS}/${RouterLinks.TERMS_OF_SERVICE}`]);
-  }
-
-  privacyPolicy() {
-    this.router.navigate([`/${RouterLinks.SETTINGS}/${RouterLinks.PRIVACY_POLICY}`]);
   }
 
   generateInteractTelemetry(interactionType, interactSubtype) {
@@ -152,7 +157,7 @@ export class AboutUsComponent implements OnInit {
   }
 
   getVersionName(appName): any {
-    this.utilityService.getBuildConfigValue('VERSION_NAME')
+    this.utilityService.getBuildConfigValue(GenericAppConfig.VERSION_NAME)
       .then(response => {
         this.getVersionCode(appName, response);
         return response;
@@ -163,7 +168,7 @@ export class AboutUsComponent implements OnInit {
   }
 
   getVersionCode(appName, versionName): any {
-    this.utilityService.getBuildConfigValue('VERSION_CODE')
+    this.utilityService.getBuildConfigValue(GenericAppConfig.VERSION_CODE)
       .then(response => {
         this.version = appName + ' v' + versionName + '.' + response;
         return response;
@@ -174,6 +179,25 @@ export class AboutUsComponent implements OnInit {
   }
 
   goBack() {
+    this.telemetryGeneratorService.generateBackClickedTelemetry(PageId.SETTINGS_ABOUT_US, Environment.SETTINGS, true);
     this.location.back();
+  }
+
+  handleBackButton() {
+    this.backButtonFunc = this.platform.backButton.subscribeWithPriority(10, () => {
+      this.telemetryGeneratorService.generateBackClickedTelemetry(PageId.SETTINGS_ABOUT_US, Environment.SETTINGS, false);
+      this.location.back();
+      this.backButtonFunc.unsubscribe();
+    });
+  }
+
+  async openTermsOfUse() {
+    this.generateInteractTelemetry(InteractType.TOUCH, InteractSubtype.TERMS_OF_USE_CLICKED);
+    const baseUrl = await this.utilityService.getBuildConfigValue('TOU_BASE_URL');
+    const url = baseUrl + RouterLinks.TERM_OF_USE;
+    const options
+      = 'hardwareback=yes,clearcache=no,zoom=no,toolbar=yes,disallowoverscroll=yes';
+
+    (window as any).cordova.InAppBrowser.open(url, '_blank', options);
   }
 }

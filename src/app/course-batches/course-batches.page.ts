@@ -1,84 +1,63 @@
-import { TelemetryGeneratorService } from './../../services/telemetry-generator.service';
-import { Component, Inject, NgZone, OnInit } from '@angular/core';
-import { AuthService, Batch, CourseService, EnrollCourseRequest, OAuthSession } from 'sunbird-sdk';
-import { Events, NavController, Platform } from '@ionic/angular';
-import { EventTopics } from '../../app/app.constant';
-import { CommonUtilService } from '../../services/common-util.service';
-import { InteractType, InteractSubtype, Environment, PageId } from '../../services/telemetry-constants';
-import { AppHeaderService } from '../../services/app-header.service';
-import * as moment from 'moment';
 import { Location } from '@angular/common';
+import { Component, Inject, NgZone, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { Subscription } from 'rxjs/Subscription';
+import { PreferenceKey } from '@app/app/app.constant';
+import { CategoryKeyTranslator } from '@app/pipes/category-key-translator/category-key-translator-pipe';
+import { AppGlobalService } from '@app/services';
+import { ConsentPopoverActionsDelegate, LocalCourseService } from '@app/services/local-course.service';
+import {
+  Platform, PopoverController
+} from '@ionic/angular';
+import { Events } from '@app/util/events';
+import { Subscription } from 'rxjs';
+import {
+  Batch,
+  CorrelationData, Rollup, SharedPreferences,
+  TelemetryObject
+} from 'sunbird-sdk';
+import { EventTopics } from '../../app/app.constant';
+import { AppHeaderService } from '../../services/app-header.service';
+import { CommonUtilService } from '../../services/common-util.service';
+import {
+  Environment, ImpressionType, InteractSubtype, InteractType,
+  PageId
+} from '../../services/telemetry-constants';
+import { SbPopoverComponent } from '../components/popups';
+import { EnrollCourse } from '../enrolled-course-details-page/course.interface';
+import { LoginHandlerService } from './../../services/login-handler.service';
+import { TelemetryGeneratorService } from './../../services/telemetry-generator.service';
 
 @Component({
   selector: 'app-course-batches',
   templateUrl: './course-batches.page.html',
   styleUrls: ['./course-batches.page.scss'],
 })
-export class CourseBatchesPage implements OnInit {
+export class CourseBatchesPage implements OnInit, ConsentPopoverActionsDelegate {
 
-  /**
-   * Contains user id
-   */
-  public userId: string;
-
-  /**
-   * To hold course indentifier
-   */
-  public identifier: string;
-
-  /**
-   * Loader
-   */
-  public showLoader: boolean;
-
-  /**
-   * Contains upcomming batches list
-   */
   public upcommingBatches: Array<Batch> = [];
-
-  /**
-   * Contains ongoing batches list
-   */
   public ongoingBatches: Array<Batch> = [];
-
-  /**
-   * Flag to check guest user
-   */
-  public isGuestUser = false;
-
-  private backButtonFunc: Subscription;
-  /**
-   * Contains batches list
-   */
-  public batches: Array<Batch> = [];
-
   public todayDate: any;
-  /**
-   * Selected filter
-   */
-  public selectedFilter: string;
+
   headerConfig = {
     showHeader: false,
     showBurgerMenu: false,
     actionButtons: []
   };
 
-  /**
-   * Default method of class CourseBatchesComponent
-   *
-   * @param {CourseService} courseService To get batches list
-   * @param {NavController} navCtrl To redirect form one page to another
-   * @param {NavParams} navParams To get url params
-   * @param {NgZone} zone To bind data
-   * @param {AuthService} authService To get logged-in user data
-   */
+  public course: any;
+  private userId: string;
+  private isGuestUser = false;
+  private backButtonFunc: Subscription;
+  private objRollup: Rollup;
+  private corRelationList: Array<CorrelationData>;
+  private telemetryObject: TelemetryObject;
+  loader?: HTMLIonLoadingElement;
+
   constructor(
-    @Inject('AUTH_SERVICE') private authService: AuthService,
-    @Inject('COURSE_SERVICE') private courseService: CourseService,
-    private navCtrl: NavController,
-    // private navParams: NavParams,
+    @Inject('SHARED_PREFERENCES') private preferences: SharedPreferences,
+    private appGlobalService: AppGlobalService,
+    private popoverCtrl: PopoverController,
+    private loginHandlerService: LoginHandlerService,
     private zone: NgZone,
     private commonUtilService: CommonUtilService,
     private events: Events,
@@ -86,20 +65,28 @@ export class CourseBatchesPage implements OnInit {
     private headerService: AppHeaderService,
     private location: Location,
     private router: Router,
-    private platform: Platform
+    private platform: Platform,
+    private localCourseService: LocalCourseService,
+    private categoryKeyTranslator: CategoryKeyTranslator
   ) {
-    const extrasState  = this.router.getCurrentNavigation().extras.state;
+    const extrasState = this.router.getCurrentNavigation().extras.state;
     if (extrasState) {
       this.ongoingBatches = extrasState.ongoingBatches;
       this.upcommingBatches = extrasState.upcommingBatches;
+      this.course = extrasState.course;
+      this.objRollup = extrasState.objRollup;
+      this.corRelationList = extrasState.corRelationList;
+      this.telemetryObject = extrasState.telemetryObject;
     } else {
       this.ongoingBatches = [];
       this.upcommingBatches = [];
     }
   }
 
-  ngOnInit(): void {
-    this.getUserId();
+  async ngOnInit() {
+    this.todayDate = window.dayjs().format('YYYY-MM-DD');
+    this.userId = await this.appGlobalService.getActiveProfileUid();
+    this.isGuestUser = !this.appGlobalService.isUserLoggedIn();
   }
 
   ionViewWillEnter() {
@@ -111,102 +98,120 @@ export class CourseBatchesPage implements OnInit {
     this.handleBackButton();
   }
 
+  ionViewWillLeave() {
+    if (this.backButtonFunc) {
+      this.backButtonFunc.unsubscribe();
+    }
+  }
+
   private handleBackButton() {
-    this.backButtonFunc =  this.platform.backButton.subscribeWithPriority(10, () => {
+    this.backButtonFunc = this.platform.backButton.subscribeWithPriority(10, () => {
       this.location.back();
       this.backButtonFunc.unsubscribe();
     });
   }
-  
-  goBack(){
+
+  goBack() {
     this.location.back();
   }
 
-  ionViewWillLeave() {
-    if(this.backButtonFunc) {
-      this.backButtonFunc.unsubscribe();
-    } 
-  }
-  /**
-   * Enroll logged-user into selected batch
-   *
-   * @param {any} item contains details of select batch
-   */
-  async enrollIntoBatch(item: Batch) {
-    const enrollCourseRequest: EnrollCourseRequest = {
-      batchId: item.id,
-      courseId: item.courseId,
-      userId: this.userId,
-      batchStatus: item.status
-    };
-    const loader = await this.commonUtilService.getLoader();
-    await loader.present();
-    const reqvalues = new Map();
-    reqvalues['enrollReq'] = enrollCourseRequest;
+  async enrollIntoBatch(batch: Batch) {
+    if (!this.localCourseService.isEnrollable([batch], this.course)) {
+      return false;
+    }
+    const enrollCourseRequest = this.localCourseService.prepareEnrollCourseRequest(this.userId, batch);
     this.telemetryGeneratorService.generateInteractTelemetry(InteractType.TOUCH,
       InteractSubtype.ENROLL_CLICKED,
       Environment.HOME,
-      PageId.COURSE_BATCHES, undefined,
-      reqvalues);
+      PageId.COURSE_BATCHES, this.telemetryObject,
+      this.localCourseService.prepareRequestValue(enrollCourseRequest),
+      this.objRollup,
+      this.corRelationList
+    );
 
-    this.courseService.enrollCourse(enrollCourseRequest).toPromise()
-      .then((data: boolean) => {
-        this.zone.run(async () => {
-          this.commonUtilService.showToast(this.commonUtilService.translateMessage('COURSE_ENROLLED'));
-          this.events.publish(EventTopics.ENROL_COURSE_SUCCESS, {
-            batchId: item.id,
-            courseId: item.courseId
+    if (this.isGuestUser) {
+      this.joinTraining(batch);
+    } else {
+      this.loader = await this.commonUtilService.getLoader();
+      await this.loader.present();
+      const enrollCourse: EnrollCourse = {
+        userId: this.userId,
+        batch,
+        pageId: PageId.COURSE_BATCHES,
+        courseId: this.course.identifier,
+        telemetryObject: this.telemetryObject,
+        objRollup: this.objRollup,
+        corRelationList: this.corRelationList,
+        channel: this.course.channel,
+        userConsent: this.course.userConsent
+      };
+
+      this.localCourseService.enrollIntoBatch(enrollCourse, this).toPromise()
+        .then((data: boolean) => {
+          this.zone.run(async () => {
+            this.commonUtilService.showToast(this.categoryKeyTranslator.transform('FRMELEMNTS_MSG_COURSE_ENROLLED', this.course));
+            this.events.publish(EventTopics.ENROL_COURSE_SUCCESS, {
+              batchId: batch.id,
+              courseId: batch.courseId
+            });
+            this.location.back();
           });
-          await loader.dismiss();
-          // this.navCtrl.pop();
-          this.location.back();
-
+        }, async (error) => {
+          await this.loader.dismiss();
         });
-      }, (error) => {
-        this.zone.run(() => {
-          if (error && error.code === 'NETWORK_ERROR') {
-            this.commonUtilService.showToast(this.commonUtilService.translateMessage('ERROR_NO_INTERNET_MESSAGE'));
-          } else if (error && error.response
-            && error.response.body && error.response.body.params && error.response.body.params.err === 'USER_ALREADY_ENROLLED_COURSE') {
-            this.commonUtilService.showToast(this.commonUtilService.translateMessage('ALREADY_ENROLLED_COURSE'));
-          }
-        });
-      });
+    }
   }
 
-  /**
-   * Get logged-user id. User id is needed to enroll user into batch.
-   */
-  getUserId(): void {
-    this.authService.getSession().subscribe((session: OAuthSession) => {
-      if (!session) {
-        this.zone.run(() => {
-          this.isGuestUser = true;
-        });
-      } else {
-        this.zone.run(() => {
-          this.isGuestUser = false;
-          this.userId = session.userToken;
-          this.getBatchesByCourseId();
-        });
-      }
-    }, () => {
+  private async joinTraining(batchDetails) {
+    this.telemetryGeneratorService.generateImpressionTelemetry(ImpressionType.VIEW,
+      '', PageId.SIGNIN_POPUP,
+      Environment.HOME,
+      this.telemetryObject.id,
+      this.telemetryObject.type,
+      this.telemetryObject.version,
+      this.objRollup,
+      this.corRelationList);
+    const confirm = await this.popoverCtrl.create({
+      component: SbPopoverComponent,
+      componentProps: {
+        sbPopoverMainTitle: this.commonUtilService.translateMessage('YOU_MUST_JOIN_TO_ACCESS_TRAINING_DETAIL'),
+        metaInfo: this.commonUtilService.translateMessage('TRAININGS_ONLY_REGISTERED_USERS'),
+        sbPopoverHeading: this.commonUtilService.translateMessage('OVERLAY_SIGN_IN'),
+        isNotShowCloseIcon: true,
+        actionsButtons: [
+          {
+            btntext: this.commonUtilService.translateMessage('OVERLAY_SIGN_IN'),
+            btnClass: 'popover-color'
+          },
+        ]
+      },
+      cssClass: 'sb-popover info',
     });
+    await confirm.present();
+    const { data } = await confirm.onDidDismiss();
+    if (data && data.canDelete) {
+      this.preferences.putString(PreferenceKey.BATCH_DETAIL_KEY, JSON.stringify(batchDetails)).toPromise();
+      this.preferences.putString(PreferenceKey.COURSE_DATA_KEY, JSON.stringify(this.course)).toPromise();
+      this.preferences.putString(PreferenceKey.CDATA_KEY, JSON.stringify(this.corRelationList)).toPromise();
+      this.telemetryGeneratorService.generateInteractTelemetry(InteractType.TOUCH,
+        InteractSubtype.LOGIN_CLICKED,
+        Environment.HOME,
+        PageId.SIGNIN_POPUP,
+        this.telemetryObject,
+        undefined,
+        this.objRollup,
+        this.corRelationList);
+      this.loginHandlerService.signIn({navigateToCourse: true});
+    }
   }
 
-
-  /**
-   * To get batches, passed from enrolled-course-details page via navParams
-   */
-  getBatchesByCourseId(): void {
-    this.ongoingBatches = this.ongoingBatches;
-    this.upcommingBatches = this.upcommingBatches;
-    this.todayDate =  moment(new Date()).format('YYYY-MM-DD');
+  onConsentPopoverShow() {
+    if (this.loader) {
+      this.loader.dismiss();
+      this.loader = undefined;
+    }
   }
 
-  spinner(flag) {
-    this.zone.run(() => {
-      this.showLoader = false;
-    });
-  }
+  onConsentPopoverDismiss() {}
+
 }

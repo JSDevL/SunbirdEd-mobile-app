@@ -1,29 +1,29 @@
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Component, Inject, ViewChild, ElementRef, OnInit } from '@angular/core';
+import { Component, Inject, ViewChild, ElementRef, OnInit, NgZone } from '@angular/core';
 import { Platform } from '@ionic/angular';
 import { TelemetryGeneratorService } from '@app/services/telemetry-generator.service';
 import { CommonUtilService } from '@app/services/common-util.service';
 import { AppGlobalService, } from '@app/services/app-global-service.service';
 import { AppHeaderService, } from '@app/services/app-header.service';
 import { FormAndFrameworkUtilService, } from '@app/services/formandframeworkutil.service';
-import { Environment, InteractType, PageId } from '@app/services/telemetry-constants';
+import { Environment, InteractType, PageId, InteractSubtype, ImpressionType, CorReleationDataType } from '@app/services/telemetry-constants';
 import {
-  ProfileService,
-  ContentService,
-  DeviceInfo,
-  Profile,
-  GetAllProfileRequest,
-  ContentRequest,
-  SharedPreferences
+  SharedPreferences,
+  TelemetryObject,
+  GetSystemSettingsRequest,
+  SystemSettingsService,
+  SystemSettings,
+  FaqService,
+  GetFaqRequest,
+  CorrelationData,
 } from 'sunbird-sdk';
-import { PreferenceKey, appLanguages, ContentType, AudienceFilter } from '../app.constant';
-import { SocialSharing } from '@ionic-native/social-sharing/ngx';
+import { PreferenceKey, appLanguages, RouterLinks } from '../app.constant';
 import { Location } from '@angular/common';
 import { AppVersion } from '@ionic-native/app-version/ngx';
-import { Subscription } from 'rxjs/Subscription';
-
-const KEY_SUNBIRD_CONFIG_FILE_PATH = 'sunbird_config_file_path';
-const SUBJECT_NAME = 'support request';
+import { TranslateService } from '@ngx-translate/core';
+import { Observable, Subscription } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-faq-help',
@@ -45,28 +45,60 @@ export class FaqHelpPage implements OnInit {
   appName: string;
   loading?: any;
   private messageListener: (evt: Event) => void;
-  @ViewChild('f') iframe: ElementRef;
+  @ViewChild('f', { static: false }) iframe: ElementRef;
   backButtonFunc: Subscription;
   headerObservable: any;
+  faqData: {
+    categories: {
+      name: string,
+      videos?: any[],
+      faqs?: {
+        topic: string,
+        description: string
+      }[],
+    }[],
+    constants: any
+  }
+  constants: any;
+  jsonURL: any;
+  value: any;
+  corRelation: Array<CorrelationData> = [];
+  selectedFaqCategory: {
+    name: string,
+    videos?: any[],
+    faqs?: {
+      topic: string,
+      description: string
+    }[],
+    constants?: any
+  } | undefined;
   constructor(
     @Inject('SHARED_PREFERENCES') private preferences: SharedPreferences,
-    @Inject('PROFILE_SERVICE') private profileService: ProfileService,
-    @Inject('CONTENT_SERVICE') private contentService: ContentService,
-    @Inject('DEVICE_INFO') private deviceInfo: DeviceInfo,
+    @Inject('SYSTEM_SETTINGS_SERVICE') private systemSettingsService: SystemSettingsService,
+    @Inject('FAQ_SERVICE') private faqService: FaqService,
     private domSanitizer: DomSanitizer,
     private telemetryGeneratorService: TelemetryGeneratorService,
-    private socialSharing: SocialSharing,
     private commonUtilService: CommonUtilService,
     private appGlobalService: AppGlobalService,
     private headerService: AppHeaderService,
     private formAndFrameworkUtilService: FormAndFrameworkUtilService,
     private location: Location,
     private appVersion: AppVersion,
-    private platform: Platform
+    private platform: Platform,
+    private translate: TranslateService,
+    private http: HttpClient,
+    private router: Router,
+    private zone: NgZone
   ) {
-    this.messageListener = (event) => {
-      this.receiveMessage(event);
-    };
+    this.getNavParam();
+  }
+
+  private getNavParam() {
+    const navExtras = this.router.getCurrentNavigation().extras && this.router.getCurrentNavigation().extras.state;
+    if (navExtras) {
+      this.corRelation = navExtras.corRelation || [];
+      this.corRelation.push({ id: PageId.FAQ, type: CorReleationDataType.FROM_PAGE });
+    }
   }
 
   ngOnInit() {
@@ -74,7 +106,66 @@ export class FaqHelpPage implements OnInit {
       .then((appName) => {
         this.appName = appName;
       });
+    this.messageListener = (event) => {
+      this.receiveMessage(event);
+    };
     window.addEventListener('message', this.messageListener, false);
+    this.getSelectedLanguage();
+    this.getDataFromUrl();
+    this.telemetryGeneratorService.generateImpressionTelemetry(
+      ImpressionType.VIEW,
+      '',
+      PageId.FAQ,
+      Environment.USER,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.corRelation);
+  }
+
+  receiveMessage(event) {
+    const values = new Map();
+    values['values'] = event.data;
+    // send telemetry for all events except Initiate-Email
+    if (event.data && event.data.action && event.data.action !== 'initiate-email-clicked') {
+      this.generateInteractTelemetry(event.data.action, values);
+    }
+  }
+
+  private async getSelectedLanguage() {
+    const selectedLanguage = await this.preferences.getString(PreferenceKey.SELECTED_LANGUAGE_CODE).toPromise();
+    if (selectedLanguage) {
+      await this.translate.use(selectedLanguage).toPromise();
+    }
+  }
+
+  private async getDataFromUrl() {
+    const faqRequest: GetFaqRequest = { language: '', faqUrl: '' };
+    const getSystemSettingsRequest: GetSystemSettingsRequest = {
+      id: 'appFaqURL'
+    };
+    await this.systemSettingsService.getSystemSettings(getSystemSettingsRequest).toPromise()
+      .then((res: SystemSettings) => {
+        faqRequest.faqUrl = res.value;
+      }).catch(err => {
+      });
+    this.loading = await this.commonUtilService.getLoader();
+    await this.loading.present();
+    if (this.selectedLanguage && this.commonUtilService.networkInfo.isNetworkAvailable) {
+      faqRequest.language = this.selectedLanguage;
+    } else {
+      faqRequest.language = 'en';
+    }
+
+    this.faqService.getFaqDetails(faqRequest).subscribe(data => {
+      this.zone.run(() => {
+        this.faqData = data as any;
+        this.constants = this.faqData.constants;
+        // tslint:disable-next-line:prefer-for-of
+        this.loading.dismiss();
+      });
+    });
   }
 
   async ionViewDidLeave() {
@@ -93,8 +184,6 @@ export class FaqHelpPage implements OnInit {
 
   async ionViewWillEnter() {
     this.headerService.showHeaderWithBackButton();
-    this.loading = await this.commonUtilService.getLoader();
-    await this.loading.present();
     this.headerObservable = this.headerService.headerEventEmitted$.subscribe(eventName => {
       this.handleHeaderEvents(eventName);
     });
@@ -138,68 +227,15 @@ export class FaqHelpPage implements OnInit {
   }
 
   handleBackButton() {
+    if (this.selectedFaqCategory) {
+      this.selectedFaqCategory = undefined;
+      return;
+    }
     this.location.back();
   }
 
-  async onLoad() {
-    const element = document.getElementsByTagName('iframe')[0];
-    if (element && element.contentDocument) {
-      if (element.contentDocument.documentElement.getElementsByTagName('body')[0].innerHTML.length !== 0 && this.loading) {
-        const appData = { appName: this.appName };
-        element.contentWindow.postMessage(appData, '*');
-        await this.loading.dismiss();
-        this.loading = undefined;
-      }
-      if (element.contentDocument.documentElement.getElementsByTagName('body').length === 0 ||
-        element['contentWindow'].location.href.startsWith('chrome-error:')
-      ) {
-        this.onError();
-      }
-    }
-    if (this.loading) {
-      await this.loading.dismiss();
-      this.loading = undefined;
-    }
-  }
-
-  async onError() {
-    if (this.loading) {
-      await this.loading.dismiss();
-      this.loading = undefined;
-    }
-    this.faq.url = './assets/faq/consumption-faqs.html?selectedlang=en&randomid=' + Math.random();
-    this.consumptionFaqUrl = this.domSanitizer.bypassSecurityTrustResourceUrl(this.faq.url);
-  }
-
-  receiveMessage(event) {
-    const values = new Map();
-    values['values'] = event.data;
-    // send telemetry for all events except Initiate-Email
-    if (event.data && event.data.action && event.data.action !== 'initiate-email-clicked') {
-      this.generateInteractTelemetry(event.data.action, values);
-    } else {
-      event.data.initiateEmailBody = this.getBoardMediumGrade(event.data.initiateEmailBody) + event.data.initiateEmailBody;
-      this.generateInteractTelemetry(event.data.action, values);
-      // launch email sharing
-      this.sendMessage(event.data.initiateEmailBody);
-    }
-  }
-
-  getBoardMediumGrade(mailBody: string): string {
-    const userProfile: Profile = this.appGlobalService.getCurrentUser();
-    let ticketSummary: string;
-    if (mailBody.length) {
-      ticketSummary = '.<br> <br> <b>' + this.commonUtilService.translateMessage('TICKET_SUMMARY') + '</b> <br> <br>';
-    } else {
-      ticketSummary = '.<br> <br> <b>' + this.commonUtilService.translateMessage('MORE_DETAILS') + '</b> <br> <br>';
-    }
-    const userDetails: string = 'From: ' + userProfile.profileType[0].toUpperCase() + userProfile.profileType.slice(1) + ', ' +
-      this.appGlobalService.getSelectedBoardMediumGrade() +
-      ticketSummary;
-    return userDetails;
-  }
-
   generateInteractTelemetry(interactSubtype, values) {
+    values.values.value.description = values.values.value.description.replace(/(<([^>]+)>)/ig, '');
     this.telemetryGeneratorService.generateInteractTelemetry(
       InteractType.TOUCH, interactSubtype,
       Environment.USER,
@@ -208,52 +244,83 @@ export class FaqHelpPage implements OnInit {
     );
   }
 
-  async sendMessage(message: string) {
-    this.deviceId = this.deviceInfo.getDeviceID();
-    const allUserProfileRequest: GetAllProfileRequest = {
-      local: true,
-      server: true
-    };
-    const contentRequest: ContentRequest = {
-      contentTypes: ContentType.FOR_DOWNLOADED_TAB,
-      audience: AudienceFilter.GUEST_TEACHER
-    };
-    const getUserCount = await this.profileService.getAllProfiles(allUserProfileRequest).map((profile) => profile.length).toPromise();
-    const getLocalContentCount = await this.contentService.getContents(contentRequest)
-      .map((contentCount) => contentCount.length).toPromise();
-    (<any>window).supportfile.shareSunbirdConfigurations(getUserCount, getLocalContentCount, async (result) => {
-      const loader = await this.commonUtilService.getLoader();
-      await loader.present();
-      this.preferences.putString(KEY_SUNBIRD_CONFIG_FILE_PATH, result).toPromise()
-        .then((resp) => {
-          this.preferences.getString(KEY_SUNBIRD_CONFIG_FILE_PATH).toPromise()
-            .then(async val => {
-              await loader.dismiss();
-              if (Boolean(val)) {
-                this.fileUrl = 'file://' + val;
-                this.subjectDetails = this.appName + ' ' + SUBJECT_NAME + '-' + this.deviceId;
-                this.socialSharing.shareViaEmail(message,
-                  this.subjectDetails,
-                  [this.appGlobalService.SUPPORT_EMAIL],
-                  null,
-                  null,
-                  this.fileUrl)
-                  .catch(error => {
-                    console.error(error);
-                  });
-              }
-            });
-        });
-    }, (error) => {
-      console.error('ERROR - ' + error);
-    });
-  }
-
   ionViewWillLeave() {
     if (this.backButtonFunc) {
       this.backButtonFunc.unsubscribe();
     }
     this.headerObservable.unsubscribe();
+  }
+
+  // toggle the card
+  toggleGroup(event) {
+    if (!event || !event.data) {
+      return;
+    }
+    const telemetryObject = new TelemetryObject((event.data.position+1).toString(), 'faq', '');
+    this.telemetryGeneratorService.generateInteractTelemetry(InteractType.TOUCH,
+      event.data.action,
+      Environment.USER,
+      PageId.FAQ,
+      telemetryObject,
+      undefined);
+  }
+
+  logInteractEvent(event) {
+    if (!event || !event.data) {
+      return;
+    }
+    this.value = event.data;
+    window.parent.postMessage(this.value, '*');
+  }
+
+  async navigateToReportIssue() {
+    this.telemetryGeneratorService.generateInteractTelemetry(InteractType.TOUCH,
+      InteractSubtype.REPORT_ISSUE_CLICKED,
+      Environment.USER,
+      PageId.FAQ,
+      undefined,
+      undefined);
+
+    const formConfig = await this.formAndFrameworkUtilService.getFormConfig();
+    this.appGlobalService.formConfig = formConfig;
+    this.router.navigate([RouterLinks.FAQ_REPORT_ISSUE], {
+      state: {
+        data: this.faqData,
+        corRelation: this.corRelation
+      }
+    });
+  }
+
+  onCategorySelect(event) {
+    this.selectedFaqCategory = undefined;
+    if (!event || !event.data) {
+      return;
+    }
+    setTimeout(() => {
+      this.replaceFaqText(event.data);
+    }, 0);
+  }
+
+  replaceFaqText(faqData) {
+    for (let i = 0; i < faqData.faqs.length; i++) {
+      if (faqData.faqs[i].topic.includes('{{APP_NAME}}')) {
+        faqData.faqs[i].topic = faqData.faqs[i].topic.replace('{{APP_NAME}}', this.appName);
+      }
+      if (faqData.faqs[i].description.includes('{{APP_NAME}}')) {
+        faqData.faqs[i].description = faqData.faqs[i].description.replace('{{APP_NAME}}', this.appName);
+      }
+    }
+
+    this.selectedFaqCategory = faqData;
+    this.selectedFaqCategory.constants = this.constants;
+  }
+
+  enableFaqReport(event) {
+    this.navigateToReportIssue();
+  }
+
+  onVideoSelect(event) {
+    console.log(event);
   }
 
 }

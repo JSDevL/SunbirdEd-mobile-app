@@ -1,5 +1,6 @@
 import { Component, Inject, ViewEncapsulation } from '@angular/core';
-import { Events, NavParams, Platform, PopoverController } from '@ionic/angular';
+import { NavParams, Platform, PopoverController, MenuController } from '@ionic/angular';
+import { Events } from '@app/util/events';
 import map from 'lodash/map';
 import cloneDeep from 'lodash/cloneDeep';
 import { TranslateService } from '@ngx-translate/core';
@@ -9,7 +10,8 @@ import {
   FrameworkCategoryCodesGroup,
   FrameworkUtilService,
   GetFrameworkCategoryTermsRequest,
-  PageAssembleFilter
+  PageAssembleFilter,
+  CachedItemRequestSourceFrom
 } from 'sunbird-sdk';
 
 import { PageFilterOptionsPage } from './page-filter-options/page-filter-options.page';
@@ -17,7 +19,7 @@ import { AppGlobalService } from 'services/app-global-service.service';
 import { TelemetryGeneratorService } from 'services/telemetry-generator.service';
 import { CommonUtilService } from 'services/common-util.service';
 import { FormAndFrameworkUtilService } from 'services/formandframeworkutil.service';
-import { Environment, ImpressionType, InteractSubtype, InteractType, PageId } from 'services/telemetry-constants';
+import { PageId, ImpressionType, Environment, InteractSubtype, InteractType } from '@app/services';
 
 @Component({
   selector: 'app-page-filter',
@@ -47,7 +49,8 @@ export class PageFilterPage {
     private events: Events,
     private telemetryGeneratorService: TelemetryGeneratorService,
     private commonUtilService: CommonUtilService,
-    private formAndFrameworkUtilService: FormAndFrameworkUtilService
+    private formAndFrameworkUtilService: FormAndFrameworkUtilService,
+    private menuCtrl: MenuController
   ) {
     this.callback = this.navParams.get('callback');
     this.initFilterValues();
@@ -59,6 +62,10 @@ export class PageFilterPage {
     this.events.subscribe('onAfterLanguageChange:update', () => {
       this.onLanguageChange();
     });
+  }
+
+  ionViewWillEnter() {
+    this.menuCtrl.enable(false);
   }
 
   onLanguageChange() {
@@ -166,6 +173,7 @@ export class PageFilterPage {
   async getFrameworkData(frameworkId: string, currentCategory: string, index: number) {
     return new Promise((resolve, reject) => {
       const req: GetFrameworkCategoryTermsRequest = {
+        from: CachedItemRequestSourceFrom.SERVER,
         currentCategoryCode: currentCategory,
         language: this.translate.currentLang,
         requiredCategories: this.categories,
@@ -229,7 +237,7 @@ export class PageFilterPage {
       });
       this.callback.applyFilter(this.pagetAssemblefilter, this.facetsFilter, true);
     }
-    await this.popCtrl.dismiss();
+    await this.popCtrl.dismiss({apply: true});
   }
 
   async cancel() {
@@ -256,6 +264,7 @@ export class PageFilterPage {
     if (this.backButtonFunc) {
       this.backButtonFunc.unsubscribe();
     }
+    this.menuCtrl.enable(true);
   }
 }
 

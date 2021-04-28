@@ -1,5 +1,4 @@
 import { TextBookTocPage } from './textbook-toc/textbook-toc';
-import { TextbookTocService } from './textbook-toc-service';
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -10,12 +9,10 @@ import { TranslateModule } from '@ngx-translate/core';
 import { ComponentsModule } from '../components/components.module';
 import { DirectivesModule } from '../../directives/directives.module';
 import { PipesModule } from '../../pipes/pipes.module';
+import { CommonConsumptionModule } from '@project-sunbird/common-consumption-v8';
 
 import { CollectionDetailEtbPage } from './collection-detail-etb.page';
 import { RouterLinks } from '../app.constant';
-
-
-
 
 const routes: Routes = [
   {
@@ -36,10 +33,11 @@ const routes: Routes = [
     RouterModule.forChild(routes),
     TranslateModule.forChild(),
     ComponentsModule,
+    CommonConsumptionModule,
     DirectivesModule,
     PipesModule
   ],
-  providers: [TextbookTocService],
+  providers: [],
   declarations: [CollectionDetailEtbPage, TextBookTocPage],
   exports: [
     CollectionDetailEtbPage,

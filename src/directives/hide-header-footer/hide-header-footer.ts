@@ -1,6 +1,7 @@
-import { Directive, ElementRef, Renderer2, Input } from '@angular/core';
-import { Events, IonContent } from '@ionic/angular';
-import { Subject, Observable, Subscription} from 'rxjs';
+import { Directive, ElementRef, Renderer2 } from '@angular/core';
+import { Events } from '@app/util/events';
+import { defer, Subject, Subscription, timer } from 'rxjs';
+import { finalize, mergeMap, startWith, switchMap, take, takeUntil, tap } from 'rxjs/operators';
 
 @Directive({
   selector: '[hide-header-footer]', // Attribute
@@ -45,24 +46,34 @@ export class HideHeaderFooterDirective {
       return;
     }
 
-    this.scrollEventSubscription = this.scrollEvent$
-      .takeUntil(Observable.defer(() => {
-        return this.touchEndEvent$.take(1).mergeMap(() => {
-          return this.scrollEvent$.startWith(undefined).switchMap(() => Observable.timer(100).take(1));
-        });
-      }))
-      .do(() => {
+    this.scrollEventSubscription = this.scrollEvent$.pipe(
+      takeUntil(defer(() => {
+        return this.touchEndEvent$.pipe(
+          take(1),
+          mergeMap(() => {
+            return this.scrollEvent$.pipe(
+              startWith(undefined),
+              switchMap(() =>
+                timer(100).pipe(
+                  take(1)
+                )
+              )
+            );
+          })
+        );
+      })),
+      tap(() => {
         const appRootRef: HTMLElement = document.getElementsByTagName('app-root')[0] as HTMLElement;
 
         appRootRef.classList.add('hide-header-footer');
-      })
-      .finally(() => {
+      }),
+      finalize(() => {
         const appRootRef: HTMLElement = document.getElementsByTagName('app-root')[0] as HTMLElement;
         appRootRef.classList.remove('hide-header-footer');
 
         this.scrollEventSubscription.unsubscribe();
         this.scrollEventSubscription = undefined;
       })
-      .subscribe();
+    ).subscribe();
   }
 }

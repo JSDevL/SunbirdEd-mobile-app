@@ -30,6 +30,10 @@ const routes: Routes = [
     resolve: { message: HasNotSelectedUserTypeGuard }
   },
   {
+    path: `${RouterLinks.USER_TYPE_SELECTION_LOGGEDIN}`,
+    loadChildren: './user-type-selection/user-type-selection.module#UserTypeSelectionPageModule'
+  },
+  {
     path: RouterLinks.PROFILE_SETTINGS,
     loadChildren: './profile-settings/profile-settings.module#ProfileSettingsPageModule',
     canLoad: [HasNotBeenOnboardedGuard],
@@ -39,15 +43,16 @@ const routes: Routes = [
     path: RouterLinks.TABS,
     loadChildren: './tabs/tabs.module#TabsPageModule'
   },
-
-  { path: RouterLinks.USER_AND_GROUPS, loadChildren: './user-and-groups/user-and-groups.module#UserAndGroupsPageModule' },
   {
     path: RouterLinks.RESOURCES,
     loadChildren: './resources/resources.module#ResourcesModule',
   },
+  {
+    path: RouterLinks.HOME,
+    loadChildren: './home/home.module#HomePageModule'
+  },
   { path: RouterLinks.VIEW_MORE_ACTIVITY, loadChildren: './view-more-activity/view-more-activity.module#ViewMoreActivityModule' },
   { path: RouterLinks.SETTINGS, loadChildren: './settings/settings.module#SettingsPageModule' },
-  { path: RouterLinks.REPORTS, loadChildren: './reports/reports.module#ReportsPageModule' },
   { path: RouterLinks.DOWNLOAD_MANAGER, loadChildren: './download-manager/download-manager.module#DownloadManagerPageModule' },
   { path: RouterLinks.STORAGE_SETTINGS, loadChildren: './storage-settings/storage-settings.module#StorageSettingsPageModule' },
   { path: RouterLinks.COURSES, loadChildren: './courses/courses.module#CoursesPageModule' },
@@ -64,11 +69,7 @@ const routes: Routes = [
     path: RouterLinks.COLLECTION_DETAIL_ETB,
     loadChildren: './collection-detail-etb/collection-detail-etb.module#CollectionDetailEtbPageModule'
   },
-  {
-    path: RouterLinks.ENROLLMENT_DETAILS,
-    loadChildren: './enrolled-course-details-page/enrollment-details-page/enrollment-details-page.module#EnrollmentDetailsPagePageModule'
-  },
-  { path: RouterLinks.COLLECTION_DETAILS, loadChildren: './collection-details/collection-details.module#CollectionDetailsPageModule' },
+  { path: `${RouterLinks.CONTENT_DETAILS}/:id`, loadChildren: './content-details/content-details.module#ContentDetailsPageModule' },
   { path: RouterLinks.CONTENT_DETAILS, loadChildren: './content-details/content-details.module#ContentDetailsPageModule' },
   { path: RouterLinks.PLAYER, loadChildren: './player/player.module#PlayerPageModule' },
   { path: RouterLinks.PAGE_FILTER, loadChildren: './page-filter/page-filter.module#PageFilterPageModule' },
@@ -85,7 +86,20 @@ const routes: Routes = [
   },
   { path: 'filters', loadChildren: './search/filters/filters.module#FiltersPageModule' },
   { path: RouterLinks.TEXTBOOK_VIEW_MORE, loadChildren: './textbook-view-more/textbook-view-more.module#TextbookViewMorePageModule' },
-  { path: RouterLinks.GUEST_EDIT, loadChildren: './profile/guest-edit/guest-edit.module#GuestEditPageModule' }
+  { path: RouterLinks.GUEST_EDIT, loadChildren: './profile/guest-edit/guest-edit.module#GuestEditPageModule' },
+  { path: RouterLinks.EXPLORE_BOOK, loadChildren: './resources/explore-books/explore-books.module#ExploreBooksPageModule' },
+  { path: RouterLinks.FAQ_REPORT_ISSUE, loadChildren: './faq-report-issue/faq-report-issue.module#FaqReportIssuePageModule' },
+  {
+    path: RouterLinks.DISTRICT_MAPPING,
+    loadChildren: './district-mapping/district-mapping.module#DistrictMappingPageModule'
+  },
+  { path: RouterLinks.MY_GROUPS, loadChildren: './my-groups/my-groups.module#MyGroupsPageModule' },
+  { path: RouterLinks.CURRICULUM_COURSES, loadChildren: './curriculum-courses/curriculum-courses.module#CurriculumCoursesPageModule' },
+  { path: RouterLinks.CATEGORY_LIST, loadChildren: './category-list/category-list-page.module#CategoryListPageModule'},
+  { path: RouterLinks.GUEST_PROFILE, loadChildren: './profile/guest-profile/guest-profile.module#GuestProfilePageModule' },
+  { path: RouterLinks.DISCUSSION, loadChildren: './discussion-forum/discussion-forum.module#DiscussionForumModule' },
+  { path: RouterLinks.SEARCH_FILTER, loadChildren: './search-filter/search-filter.module#SearchFilterPageModule' },
+
 ];
 
 @NgModule({

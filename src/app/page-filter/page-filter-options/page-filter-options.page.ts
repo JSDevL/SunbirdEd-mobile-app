@@ -6,8 +6,6 @@ import {
   PopoverController,
 } from '@ionic/angular';
 import { PageAssembleFilter } from 'sunbird-sdk';
-import { ViewController } from '@ionic/core';
-
 @Component({
   selector: 'app-page-filter-options',
   templateUrl: './page-filter-options.page.html',
@@ -53,7 +51,6 @@ export class PageFilterOptionsPage {
 
   handleDeviceBackButton() {
     this.backButtonFunc = this.platform.backButton.subscribeWithPriority(10 , () => {
-      // migration-TODO
       this.viewCtrl.dismiss();
       this.backButtonFunc.unsubscribe();
     });
@@ -95,9 +92,8 @@ export class PageFilterOptionsPage {
   }
 
   confirm() {
-      // migration-TODO
     this.viewCtrl.dismiss();
-    if(this.backButtonFunc) {
+    if (this.backButtonFunc) {
       this.backButtonFunc.unsubscribe();
     }
   }
@@ -147,9 +143,9 @@ export class PageFilterOptionsPage {
 
   cancel() {
     this.facets.selected = [...this.prevSelectedTopic];
-      // migration-TODO
     this.viewCtrl.dismiss();
   }
+
   apply() {
     this.prevSelectedTopic = [...this.facets.selected];
     this.confirm();

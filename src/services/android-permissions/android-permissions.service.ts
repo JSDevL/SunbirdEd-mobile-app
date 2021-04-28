@@ -1,13 +1,13 @@
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
 import { AndroidPermission, AndroidPermissionsStatus } from '@app/services/android-permissions/android-permission';
+import { defer, Observable } from 'rxjs';
 
 declare const cordova;
 
 @Injectable()
 export class AndroidPermissionsService {
   checkPermissions(permissions: AndroidPermission[]): Observable<{ [key: string]: AndroidPermissionsStatus }> {
-    return Observable.defer(async () => {
+    return defer(async () => {
       const requestPromises = permissions.map((permission) => {
         return new Promise<AndroidPermissionsStatus>((resolve, reject) => {
           cordova.plugins.permissions.checkPermission(permission, (status: AndroidPermissionsStatus) => {
@@ -36,7 +36,7 @@ export class AndroidPermissionsService {
   }
 
   requestPermission(permission: AndroidPermission): Observable<AndroidPermissionsStatus> {
-    return Observable.defer(async () => {
+    return defer(async () => {
       const permissionStatus: AndroidPermissionsStatus = await new Promise<AndroidPermissionsStatus>((resolve, reject) => {
         cordova.plugins.permissions.requestPermissions([permission], (status: AndroidPermissionsStatus) => {
           resolve(status);
@@ -52,7 +52,7 @@ export class AndroidPermissionsService {
   }
 
   requestPermissions(permissions: AndroidPermission[]): Observable<AndroidPermissionsStatus> {
-    return Observable.defer(async () => {
+    return defer(async () => {
       const permissionStatus: AndroidPermissionsStatus = await new Promise<AndroidPermissionsStatus>((resolve, reject) => {
         cordova.plugins.permissions.requestPermissions(permissions, (status: AndroidPermissionsStatus) => {
           resolve(status);
@@ -68,13 +68,10 @@ export class AndroidPermissionsService {
   private async getAlwaysDeniedStatus(androidPermission: AndroidPermission): Promise<boolean> {
     return new Promise<boolean>((resolve, reject) => {
       cordova.plugins.diagnostic.getPermissionAuthorizationStatus((status) => {
-        switch (status) {
-          case cordova.plugins.diagnostic.permissionStatus.NOT_REQUESTED:
-          case cordova.plugins.diagnostic.permissionStatus.DENIED_ALWAYS:
-            resolve(true);
-            break;
-          default:
-            resolve(false);
+        if (status === cordova.plugins.diagnostic.permissionStatus.DENIED_ALWAYS) {
+          resolve(true);
+        } else {
+          resolve(false);
         }
       }, (e) => {
         reject(e);

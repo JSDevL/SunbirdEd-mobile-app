@@ -1,68 +1,75 @@
 // Angular dependencies
-import { NgModule, Provider, ErrorHandler, APP_INITIALIZER, CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-import { RouteReuseStrategy } from '@angular/router';
 import { HttpClient, HttpClientModule } from '@angular/common/http';
+import { APP_INITIALIZER, CUSTOM_ELEMENTS_SCHEMA, ErrorHandler, NgModule, Provider } from '@angular/core';
+import { BrowserModule } from '@angular/platform-browser';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-
+import { RouteReuseStrategy } from '@angular/router';
+import { TextbookTocService } from '@app/app/collection-detail-etb/textbook-toc-service';
+import { configuration } from '@app/configuration/configuration';
+import { ConsentService } from '@app/services/consent-service';
+import { CrashAnalyticsErrorLogger } from '@app/services/crash-analytics/crash-analytics-error-logger';
+import { DiscussionTelemetryService } from '@app/services/discussion/discussion-telemetry.service';
+import { DownloadPdfService } from '@app/services/download-pdf/download-pdf.service';
+import { ExternalIdVerificationService } from '@app/services/externalid-verification.service';
+import { TncUpdateHandlerService } from '@app/services/handlers/tnc-update-handler.service';
+import { LocalCourseService } from '@app/services/local-course.service';
+import { LocationHandler } from '@app/services/location-handler';
+import { NavigationService } from '@app/services/navigation-handler.service';
+import { PrintPdfService } from '@app/services/print-pdf/print-pdf.service';
+import { ProfileHandler } from '@app/services/profile-handler';
+import { QumlPlayerService } from '@app/services/quml-player/quml-player.service';
+import { SplaschreenDeeplinkActionHandlerDelegate } from '@app/services/sunbird-splashscreen/splaschreen-deeplink-action-handler-delegate';
+import {
+  SplashcreenTelemetryActionHandlerDelegate
+} from '@app/services/sunbird-splashscreen/splashcreen-telemetry-action-handler-delegate';
+import { SplashscreenImportActionHandlerDelegate } from '@app/services/sunbird-splashscreen/splashscreen-import-action-handler-delegate';
+import { AppVersion } from '@ionic-native/app-version/ngx';
+import { Device } from '@ionic-native/device/ngx';
+import { FileOpener } from '@ionic-native/file-opener/ngx';
+import { FileTransfer, FileTransferObject } from '@ionic-native/file-transfer/ngx';
+import { File } from '@ionic-native/file/ngx';
 // ionic cordova dependencies/plugins
 import { WebView } from '@ionic-native/ionic-webview/ngx';
-import { IonicModule, IonicRouteStrategy } from '@ionic/angular';
-import { StatusBar } from '@ionic-native/status-bar/ngx';
-import { AppVersion } from '@ionic-native/app-version/ngx';
-import { SocialSharing } from '@ionic-native/social-sharing/ngx';
-import { FileTransfer, FileTransferObject } from '@ionic-native/file-transfer/ngx';
-import { FileOpener } from '@ionic-native/file-opener/ngx';
-import { UniqueDeviceID } from '@ionic-native/unique-device-id/ngx';
-import { Device } from '@ionic-native/device/ngx';
+import { LocalNotifications } from '@ionic-native/local-notifications/ngx';
+import { NativePageTransitions } from '@ionic-native/native-page-transitions/ngx';
 import { Network } from '@ionic-native/network/ngx';
-
+import { SocialSharing } from '@ionic-native/social-sharing/ngx';
+import { StatusBar } from '@ionic-native/status-bar/ngx';
+import { IonicModule, IonicRouteStrategy } from '@ionic/angular';
 // 3rd party dependencies
-import { TranslateModule, TranslateLoader, TranslateService } from '@ngx-translate/core';
+import { TranslateLoader, TranslateModule, TranslateService } from '@ngx-translate/core';
 import { TranslateHttpLoader } from '@ngx-translate/http-loader';
-
+import { CsContentType } from '@project-sunbird/client-services/services/content';
+import { QuestionCursor } from '@project-sunbird/sunbird-quml-player-v8';
 // app dependencies like directive, sdk, services etc
 import { SunbirdSdk } from 'sunbird-sdk';
 import { DirectivesModule } from '../directives/directives.module';
+import { AliasBoardName } from '../pipes/alias-board-name/alias-board-name';
 import {
-  AppGlobalService,
-  CommonUtilService,
-  CourseUtilService,
-  TelemetryGeneratorService,
-  QRScannerResultHandler,
-  UtilityService,
+  ActivePageService, AndroidPermissionsService, AppGlobalService,
   AppHeaderService,
   AppRatingService,
-  LogoutHandlerService,
-  TncUpdateHandlerService,
+  CanvasPlayerService,
+  CollectionService, ComingSoonMessageService, CommonUtilService,
   ContainerService,
-  AndroidPermissionsService,
-  ComingSoonMessageService,
-  NotificationService,
-  SunbirdQRScanner,
-  ActivePageService,
+  ContentAggregatorHandler, CourseUtilService,
   FormAndFrameworkUtilService,
-  CanvasPlayerService
+  GroupHandlerService, LoginHandlerService, LogoutHandlerService,
+  NotificationService, QRScannerResultHandler,
+  SplashScreenService, SunbirdQRScanner, TelemetryGeneratorService,
+  UtilityService
 } from '../services/index';
-
-
-import { AppComponent } from './app.component';
 import { AppRoutingModule } from './app-routing.module';
-import { UserTypeSelectionPageModule } from './user-type-selection/user-type-selection.module';
+import { AppComponent } from './app.component';
 import { ComponentsModule } from './components/components.module';
-import { UserAndGroupsRoutingModule } from './user-and-groups/user-and-groups-routing.module';
-import { UserAndGroupsPageModule } from './user-and-groups/user-and-groups.module';
-import { LocalNotifications } from '@ionic-native/local-notifications/ngx';
-
-import { PageFilterPageModule } from './page-filter/page-filter.module';
-import { PageFilterPage } from './page-filter/page-filter.page';
-
 import { PageFilterOptionsPageModule } from './page-filter/page-filter-options/page-filter-options.module';
 import { PageFilterOptionsPage } from './page-filter/page-filter-options/page-filter-options.page';
-import { CrashAnalyticsErrorLogger } from '@app/services/crash-analytics/crash-analytics-error-logger';
-import { File } from '@ionic-native/file/ngx';
-
-
+import { PageFilterPageModule } from './page-filter/page-filter.module';
+import { PageFilterPage } from './page-filter/page-filter.page';
+import { TermsAndConditionsPageModule } from './terms-and-conditions/terms-and-conditions.module';
+import { UserTypeSelectionPageModule } from './user-type-selection/user-type-selection.module';
+import { UpdateProfileService } from '@app/services/update-profile-service';
+import { SbSearchFilterModule } from 'common-form-elements';
 
 // AoT requires an exported function for factories
 export function translateHttpLoaderFactory(httpClient: HttpClient) {
@@ -90,6 +97,9 @@ export const apiService = () => {
 export const profileService = () => {
   return SunbirdSdk.instance.profileService;
 };
+export const deviceRegisterService = () => {
+  return SunbirdSdk.instance.deviceRegisterService;
+};
 export const groupService = () => {
   return SunbirdSdk.instance.groupService;
 };
@@ -110,9 +120,6 @@ export const contentService = () => {
 };
 export const contentFeedbackService = () => {
   return SunbirdSdk.instance.contentFeedbackService;
-};
-export const summarizerService = () => {
-  return SunbirdSdk.instance.summarizerService;
 };
 export const eventsBusService = () => {
   return SunbirdSdk.instance.eventsBusService;
@@ -142,7 +149,21 @@ export function errorLoggerService() {
 export function searchHistoryService() {
   return SunbirdSdk.instance.searchHistoryService;
 }
-
+export function networkInfoService() {
+  return SunbirdSdk.instance.networkInfoService;
+}
+export function codePushExperimentService() {
+  return SunbirdSdk.instance.codePushExperimentService;
+}
+export function faqService() {
+  return SunbirdSdk.instance.faqService;
+}
+export function archiveService() {
+  return SunbirdSdk.instance.archiveService;
+}
+export const discussionService = () => {
+  return SunbirdSdk.instance.discussionService;
+};
 export function sdkDriverFactory(): any {
   return [{
     provide: 'SDK_CONFIG',
@@ -172,6 +193,9 @@ export function sdkDriverFactory(): any {
     provide: 'PROFILE_SERVICE',
     useFactory: profileService
   }, {
+    provide: 'DEVICE_REGISTER_SERVICE',
+    useFactory: deviceRegisterService
+  }, {
     provide: 'DB_SERVICE',
     useFactory: dbService
   }, {
@@ -199,9 +223,6 @@ export function sdkDriverFactory(): any {
     provide: 'CONTENT_FEEDBACK_SERVICE',
     useFactory: contentFeedbackService
   }, {
-    provide: 'SUMMARIZER_SERVICE',
-    useFactory: summarizerService
-  }, {
     provide: 'EVENTS_BUS_SERVICE',
     useFactory: eventsBusService
   }, {
@@ -225,6 +246,22 @@ export function sdkDriverFactory(): any {
   }, {
     provide: 'SEARCH_HISTORY_SERVICE',
     useFactory: searchHistoryService
+  }, {
+    provide: 'CODEPUSH_EXPERIMENT_SERVICE',
+    useFactory: codePushExperimentService
+  }, {
+    provide: 'NETWORK_INFO_SERVICE',
+    useFactory: networkInfoService
+  }, {
+    provide: 'FAQ_SERVICE',
+    useFactory: faqService
+  }, {
+    provide: 'ARCHIVE_SERVICE',
+    useFactory: archiveService
+  },
+  {
+    provide: 'DISCUSSION_SERVICE',
+    useFactory: discussionService
   }
   ];
 }
@@ -235,23 +272,28 @@ export const sunbirdSdkFactory =
   () => {
     return async () => {
       const buildConfigValues = JSON.parse(await new Promise<string>((resolve, reject) => {
-        buildconfigreader.getBuildConfigValues('org.sunbird.app', (v) => {
-          resolve(v);
-        }, (err) => {
-          reject(err);
-        });
+        document.addEventListener('deviceready', () => {
+          sbutility.getBuildConfigValues('org.sunbird.app', (v) => {
+            resolve(v);
+          }, (err) => {
+            reject(err);
+          });
+        }, false);
+
       }));
 
       await SunbirdSdk.instance.init({
+        platform: 'cordova',
         fileConfig: {
-          debugMode: false
         },
         apiConfig: {
-          debugMode: false,
+          debugMode: configuration.debug,
           host: buildConfigValues['BASE_URL'],
           user_authentication: {
             redirectUrl: buildConfigValues['OAUTH_REDIRECT_URL'],
             authUrl: '/auth/realms/sunbird/protocol/openid-connect',
+            mergeUserHost: buildConfigValues['MERGE_ACCOUNT_BASE_URL'],
+            autoMergeApiPath: '/migrate/user/account'
           },
           api_authentication: {
             mobileAppKey: buildConfigValues['MOBILE_APP_KEY'],
@@ -269,12 +311,15 @@ export const sunbirdSdkFactory =
           debugMode: true
         },
         dbConfig: {
-          debugMode: false,
           dbName: 'GenieServices.db'
+        },
+        deviceRegisterConfig: {
+          apiPath: '/api/v3/device'
         },
         contentServiceConfig: {
           apiPath: '/api/content/v1',
-          searchApiPath: '/api/composite/v1'
+          searchApiPath: '/api/content/v1',
+          contentHeirarchyAPIPath: '/api/course/v1'
         },
         courseServiceConfig: {
           apiPath: '/api/course/v1'
@@ -288,14 +333,18 @@ export const sunbirdSdkFactory =
           frameworkApiPath: '/api/framework/v1',
           frameworkConfigDirPath: '/data/framework',
           channelConfigDirPath: '/data/channel',
-          searchOrganizationApiPath: '/api/org/v1',
+          searchOrganizationApiPath: '/api/org/v2',
           systemSettingsDefaultChannelIdKey: 'custodianOrgId'
         },
         profileServiceConfig: {
           profileApiPath: '/api/user/v1',
+          profileApiPath_V2: '/api/user/v2',
+          profileApiPath_V3: '/api/user/v3',
+          profileApiPath_V4: '/api/user/v4',
           tenantApiPath: '/v1/tenant',
           otpApiPath: '/api/otp/v1',
-          searchLocationApiPath: '/api/data/v1'
+          searchLocationApiPath: '/api/data/v1',
+          locationDirPath: '/data/location'
         },
         pageServiceConfig: {
           apiPath: '/api/data/v1',
@@ -309,18 +358,19 @@ export const sunbirdSdkFactory =
           systemSettingsDirPath: '/data/system',
         },
         telemetryConfig: {
-          deviceRegisterApiPath: '',
-          telemetryApiPath: '/api/data/v1',
-          deviceRegisterHost: buildConfigValues['DEVICE_REGISTER_BASE_URL'],
+          apiPath: '/api/data/v1',
           telemetrySyncBandwidth: 200,
           telemetrySyncThreshold: 200,
           telemetryLogMinAllowedOffset: 86400000
         },
         sharedPreferencesConfig: {
-          debugMode: false
         },
         playerConfig: {
           showEndPage: false,
+          endPage: [{
+            template: 'assessment',
+            contentType: [CsContentType.SELF_ASSESS]
+          }],
           splash: {
             webLink: '',
             text: '',
@@ -330,19 +380,29 @@ export const sunbirdSdkFactory =
           overlay: {
             enableUserSwitcher: false,
             showUser: false
-          }
+          },
+          plugins: [
+            {
+              id: 'org.sunbird.player.endpage',
+              ver: '1.1',
+              type: 'plugin'
+            }
+          ]
         },
         errorLoggerConfig: {
           errorLoggerApiPath: '/api/data/v1/client/logs'
+        },
+        faqServiceConfig: {
+          faqConfigDirPath: '/data/faq'
         }
       });
 
-      // window['sunbird'] = SunbirdSdk.instance;
+      window['sunbird'] = SunbirdSdk.instance;
     };
   };
 
 
-declare const buildconfigreader;
+declare const sbutility;
 @NgModule({
   declarations: [AppComponent],
   entryComponents: [PageFilterPage, PageFilterOptionsPage],
@@ -370,7 +430,8 @@ declare const buildconfigreader;
     UserTypeSelectionPageModule,
     PageFilterPageModule,
     PageFilterOptionsPageModule,
-    UserAndGroupsPageModule
+    TermsAndConditionsPageModule,
+    SbSearchFilterModule.forRoot('mobile')
   ],
   providers: [
     StatusBar,
@@ -389,13 +450,17 @@ declare const buildconfigreader;
     SunbirdQRScanner,
     CommonUtilService,
     LogoutHandlerService,
+    LoginHandlerService,
     TncUpdateHandlerService,
     ContainerService,
-    UniqueDeviceID,
     UtilityService,
+    LocalCourseService,
     AppHeaderService,
     AppRatingService,
     FormAndFrameworkUtilService,
+    DownloadPdfService,
+    PrintPdfService,
+    CollectionService,
     Device,
     Network,
     AndroidPermissionsService,
@@ -403,12 +468,27 @@ declare const buildconfigreader;
     NotificationService,
     ActivePageService,
     CanvasPlayerService,
+    SplashcreenTelemetryActionHandlerDelegate,
+    SplashscreenImportActionHandlerDelegate,
+    SplaschreenDeeplinkActionHandlerDelegate,
+    SplashScreenService,
+    ExternalIdVerificationService,
+    TextbookTocService,
+    GroupHandlerService,
+    NativePageTransitions,
+    NavigationService,
+    ContentAggregatorHandler,
+    AliasBoardName,
+    ConsentService,
+    ProfileHandler,
+    LocationHandler,
+    DiscussionTelemetryService,
+    UpdateProfileService,
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },
     ...sunbirdSdkServicesProvidersFactory(),
-    { provide: ErrorHandler, useClass: ErrorHandler },
     { provide: ErrorHandler, useClass: CrashAnalyticsErrorLogger },
-    // { provide: ErrorHandler},
-    { provide: APP_INITIALIZER, useFactory: sunbirdSdkFactory, deps: [], multi: true }
+    { provide: APP_INITIALIZER, useFactory: sunbirdSdkFactory, deps: [], multi: true },
+    { provide: QuestionCursor, useClass: QumlPlayerService }
   ],
   bootstrap: [AppComponent],
   schemas: [

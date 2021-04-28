@@ -1,15 +1,13 @@
-import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { NgModule } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Routes, RouterModule } from '@angular/router';
-
-import { IonicModule } from '@ionic/angular';
-
-import { QrcoderesultPage } from './qrcoderesult.page';
+import { RouterModule, Routes } from '@angular/router';
 import { DirectivesModule } from '@app/directives/directives.module';
 import { PipesModule } from '@app/pipes/pipes.module';
+import { IonicModule } from '@ionic/angular';
 import { TranslateModule } from '@ngx-translate/core';
 import { ComponentsModule } from '../components/components.module';
+import { QrcoderesultPage } from './qrcoderesult.page';
 
 const routes: Routes = [
   {
@@ -29,6 +27,10 @@ const routes: Routes = [
     ComponentsModule,
     DirectivesModule
   ],
-  declarations: [QrcoderesultPage]
+  providers: [],
+  declarations: [QrcoderesultPage],
+  exports: [
+    QrcoderesultPage
+  ]
 })
 export class QrcoderesultPageModule {}

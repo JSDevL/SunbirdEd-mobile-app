@@ -23,7 +23,10 @@
 .popover-alert {
   --width: 100%;
 }
-
+.popover-alert.popoverPosition{
+  --width: 100%;
+  position: absolute;
+}
 .popover-alert .popover-content.sc-ion-popover-md {
   top: unset !important;
   bottom: 0;
@@ -35,4 +38,35 @@
 .popover-alert ion-backdrop {
   background-color: black;
   opacity: 0.4 !important;
+}
+
+.custom-loader-class{
+  --height:50px;
+  --width:50px;
+}
+
+.custom-loader-message-class {
+  .loading-wrapper.sc-ion-loading-md {
+    border-radius: 2px;
+  }
+}
+
+.sb-course-container .header .title {
+  color: #000000 !important;
+  font-size: 18px !important;
+}
+
+// Discussion Forum
+.discussion-forum{
+  background-color: map-get($colors, light_gray_8c);
+}
+.discuss-left-panel{
+  z-index: 3 !important;
+}
+.df-btn-container{
+  padding: 1rem !important;
+  .sb-left-icon{
+    color: map-get($colors, primary);
+    background-color: map-get($colors, light_gray);
+  }
 }

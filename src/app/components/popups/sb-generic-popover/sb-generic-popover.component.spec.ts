@@ -1,27 +1,86 @@
-import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
-import { async, ComponentFixture, TestBed } from '@angular/core/testing';
-
-import { SbGenericPopoverComponent } from './sb-generic-popover.component';
+import { PopoverController, Platform } from '@ionic/angular';
+import { Events } from '@app/util/events';
+import { SbGenericPopoverComponent } from '../sb-generic-popover/sb-generic-popover.component';
 
 describe('SbGenericPopoverComponent', () => {
-  let component: SbGenericPopoverComponent;
-  let fixture: ComponentFixture<SbGenericPopoverComponent>;
+    let sbGenericPopoverComponent: SbGenericPopoverComponent;
 
-  beforeEach(async(() => {
-    TestBed.configureTestingModule({
-      declarations: [ SbGenericPopoverComponent ],
-      schemas: [CUSTOM_ELEMENTS_SCHEMA],
-    })
-    .compileComponents();
-  }));
+    const mockEventsResponse = { selectedContents: ['do_1234'] };
+    const mockEvents: Partial<Events> = {
+        subscribe: jest.fn(() => mockEventsResponse),
+        unsubscribe: jest.fn()
+    };
 
-  beforeEach(() => {
-    fixture = TestBed.createComponent(SbGenericPopoverComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-  });
+    const mockPopOverController: Partial<PopoverController> = {
+        dismiss: jest.fn()
+    };
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
+    const mockPlatform: Partial<Platform> = {
+    };
+
+    beforeAll(() => {
+        sbGenericPopoverComponent = new SbGenericPopoverComponent(
+            mockPopOverController as PopoverController,
+            mockPlatform as Platform,
+            mockEvents as Events
+        );
+    });
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('should create a instance of SbGenericPopoverComponent', () => {
+        expect(sbGenericPopoverComponent).toBeTruthy();
+    });
+
+    it('should subscribe to back button and events subscription', () => {
+        // arrange
+        const subscribeWithPriorityData = jest.fn((_, fn) => fn());
+        mockPlatform.backButton = {
+            subscribeWithPriority: subscribeWithPriorityData,
+        } as any;
+
+        const unsubscribeFn = jest.fn();
+        sbGenericPopoverComponent.backButtonFunc = {
+            unsubscribe: unsubscribeFn,
+        } as any;
+
+        // act
+        sbGenericPopoverComponent.ngOnInit();
+        // assert
+        expect(mockPopOverController.dismiss).toHaveBeenCalledWith({ isLeftButtonClicked: null });
+        // expect(sbGenericPopoverComponent.selectedContents).toEqual(mockEventsResponse);
+        expect(unsubscribeFn).toHaveBeenCalled();
+    });
+
+    it('should unsubscribe to back button and events on ngOnDestroy', () => {
+        // arrange
+        sbGenericPopoverComponent.backButtonFunc = {
+            unsubscribe: jest.fn(),
+        } as any;
+        // act
+        sbGenericPopoverComponent.ngOnDestroy();
+        // assert
+        expect(mockEvents.unsubscribe).toHaveBeenCalledWith('selectedContents:changed');
+        // expect(sbGenericPopoverComponent.selectedContents).toEqual(mockEventsResponse);
+        expect(sbGenericPopoverComponent.backButtonFunc.unsubscribe).toHaveBeenCalled();
+    });
+
+    it('should dismiss the popup on closePopOver', () => {
+        // arrange
+        // act
+        sbGenericPopoverComponent.closePopover();
+        // assert
+        expect(mockPopOverController.dismiss).toHaveBeenCalledWith({ isLeftButtonClicked: null });
+    });
+
+    it('should dismiss the popup on deleteContent', () => {
+        // arrange
+        // act
+        sbGenericPopoverComponent.deleteContent(1);
+        // assert
+        expect(mockPopOverController.dismiss).toHaveBeenCalledWith({ isLeftButtonClicked: false });
+    });
+
 });

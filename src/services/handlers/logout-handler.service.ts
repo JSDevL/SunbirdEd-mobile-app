@@ -1,27 +1,23 @@
 import { Inject, Injectable } from '@angular/core';
-import { PreferenceKey, RouterLinks } from '@app/app/app.constant';
-import { GUEST_STUDENT_TABS, GUEST_TEACHER_TABS, initTabs } from '@app/app/module.service'
+import { NavigationExtras, Router } from '@angular/router';
+import { GUEST_STUDENT_TABS, GUEST_TEACHER_TABS, initTabs } from '@app/app/module.service';
 import { AppGlobalService } from '@app/services/app-global-service.service';
 import { CommonUtilService } from '@app/services/common-util.service';
 import { TelemetryGeneratorService } from '@app/services/telemetry-generator.service';
-import { Events } from '@ionic/angular';
+import { Events } from '@app/util/events';
+import { mergeMap, tap } from 'rxjs/operators';
 import {
-  AuthService,
-  ProfileService,
-  ProfileType,
-  SharedPreferences
+  AuthService, ProfileService, ProfileType, SharedPreferences
 } from 'sunbird-sdk';
-import { Observable } from 'rxjs';
+import { PreferenceKey, RouterLinks } from '../../app/app.constant';
+import { ContainerService } from '../container.services';
 import {
-  Environment,
-  InteractSubtype,
-  InteractType,
-  PageId
-} from '@app/services/telemetry-constants';
-import { ContainerService } from '@app/services/container.services';
-import { Router } from '@angular/router';
+  Environment, InteractSubtype, InteractType, PageId
+} from '../telemetry-constants';
 
-@Injectable()
+@Injectable({
+  providedIn: 'root'
+})
 export class LogoutHandlerService {
   constructor(
     @Inject('PROFILE_SERVICE') private profileService: ProfileService,
@@ -33,7 +29,8 @@ export class LogoutHandlerService {
     private containerService: ContainerService,
     private telemetryGeneratorService: TelemetryGeneratorService,
     private router: Router
-  ) { }
+  ) {
+  }
 
   public onLogout() {
     if (!this.commonUtilService.networkInfo.isNetworkAvailable) {
@@ -43,63 +40,70 @@ export class LogoutHandlerService {
     this.generateLogoutInteractTelemetry(InteractType.TOUCH,
       InteractSubtype.LOGOUT_INITIATE, '');
 
-
-    this.preferences.getString(PreferenceKey.GUEST_USER_ID_BEFORE_LOGIN)
-      .do(async (guest_user_id: string) => {
-        if (!guest_user_id) {
+    this.preferences.getString(PreferenceKey.GUEST_USER_ID_BEFORE_LOGIN).pipe(
+      tap(async (guestUserId: string) => {
+        if (!guestUserId) {
           await this.preferences.putString(PreferenceKey.SELECTED_USER_TYPE, ProfileType.TEACHER).toPromise();
+        } else {
+          const allProfileDetais = await this.profileService.getAllProfiles().toPromise();
+          const currentProfile = allProfileDetais.find(ele => ele.uid === guestUserId);
+          const guestProfileType = (currentProfile && currentProfile.profileType) ? currentProfile.profileType : ProfileType.NONE;
+          await this.preferences.putString(PreferenceKey.SELECTED_USER_TYPE, guestProfileType).toPromise();
         }
-      })
-      .mergeMap((guest_user_id: string) => this.profileService.setActiveSessionForProfile(guest_user_id))
-      .mergeMap(() => Observable.defer(() => Observable.of((<any>window).splashscreen.clearPrefs())))
-      .mergeMap(() => this.authService.resignSession())
-      .do(async () => {
+
+        splashscreen.clearPrefs();
+      }),
+      mergeMap((guestUserId: string) => {
+        return this.profileService.setActiveSessionForProfile(guestUserId);
+      }),
+      mergeMap(() => {
+        return this.authService.resignSession();
+      }),
+      tap(async () => {
         await this.navigateToAptPage();
         this.events.publish(AppGlobalService.USER_INFO_UPDATED);
+        this.appGlobalService.setEnrolledCourseList([]);
       })
-      .subscribe();
+    ).subscribe();
   }
 
   private async navigateToAptPage() {
-    if (this.appGlobalService.DISPLAY_ONBOARDING_PAGE) {
-      // Not used page
-      // Migration Todo
-      // await this.app.getRootNav().setRoot(OnboardingPage);
-      // this.router.navigate([])
+    const selectedUserType = await this.preferences.getString(PreferenceKey.SELECTED_USER_TYPE).toPromise();
+
+    await this.appGlobalService.getGuestUserInfo();
+
+    if (selectedUserType === ProfileType.STUDENT) {
+      initTabs(this.containerService, GUEST_STUDENT_TABS);
+    } else if (this.commonUtilService.isAccessibleForNonStudentRole(selectedUserType)) {
+      initTabs(this.containerService, GUEST_TEACHER_TABS);
+    }
+
+    this.events.publish('UPDATE_TABS');
+
+    const isOnboardingCompleted = (await this.preferences.getString(PreferenceKey.IS_ONBOARDING_COMPLETED).toPromise() === 'true') ?
+      true : false;
+    if (selectedUserType === ProfileType.ADMIN) {
+      this.router.navigate([RouterLinks.USER_TYPE_SELECTION_LOGGEDIN]);
+    } else if (isOnboardingCompleted) {
+      const navigationExtras: NavigationExtras = { state: { loginMode: 'guest' } };
+      this.router.navigate([`/${RouterLinks.TABS}`], navigationExtras);
     } else {
-      const selectedUserType = await this.preferences.getString(PreferenceKey.SELECTED_USER_TYPE).toPromise();
-
-      await this.appGlobalService.getGuestUserInfo();
-
-      if (selectedUserType === ProfileType.STUDENT) {
-        initTabs(this.containerService, GUEST_STUDENT_TABS);
-      } else if (selectedUserType === ProfileType.TEACHER) {
-        initTabs(this.containerService, GUEST_TEACHER_TABS);
-      }
-
-      // Migration todo
-      // await this.app.getRootNav().setRoot(TabsPage, { loginMode: 'guest' });
-      this.router.navigate([`/${RouterLinks.TABS}`], {
-        state: {
-          loginMode: 'guest'
-        }
-      });
+      const navigationExtras: NavigationExtras = { queryParams: { reOnboard: true } };
+      this.router.navigate([`/${RouterLinks.PROFILE_SETTINGS}`], navigationExtras);
     }
 
     this.generateLogoutInteractTelemetry(InteractType.OTHER, InteractSubtype.LOGOUT_SUCCESS, '');
   }
 
   private generateLogoutInteractTelemetry(interactType: InteractType, interactSubtype: InteractSubtype, uid: string) {
-    const valuesMap = new Map();
-    valuesMap.set('UID', uid);
+    const valuesMap = {};
+    valuesMap['UID'] = uid;
     this.telemetryGeneratorService.generateInteractTelemetry(interactType,
       interactSubtype,
       Environment.HOME,
       PageId.LOGOUT,
       undefined,
-      valuesMap,
-      undefined,
-      undefined
+      valuesMap
     );
   }
 }

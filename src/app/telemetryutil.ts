@@ -6,10 +6,11 @@ import {
     TelemetryEndRequest,
     Rollup
 } from 'sunbird-sdk';
-import {Mode, Environment} from '../services/telemetry-constants';
+import { Mode, Environment } from '../services/telemetry-constants';
 
 
-export const generateImpressionTelemetry = (type, subtype, pageid, env,
+export const generateImpressionTelemetry = (
+    type, subtype, pageid, env,
     objectId, objectType, objectVersion,
     rollup: Rollup,
     corRelationList: Array<CorrelationData>): TelemetryImpressionRequest => {
@@ -29,10 +30,11 @@ export const generateImpressionTelemetry = (type, subtype, pageid, env,
     if (corRelationList !== undefined) {
         telemetryImpressionRequest.correlationData = corRelationList;
     }
-    return this.telemetryImpressionRequest;
+    return telemetryImpressionRequest;
 };
 
-export const generateInteractTelemetry = (interactType, subType, env, pageId,
+export const generateInteractTelemetry = (
+    interactType, subType, env, pageId,
     values: Map, rollup: Rollup, corRelationList: Array<CorrelationData>): TelemetryInteractRequest => {
     const telemetryInteractRequest = new TelemetryInteractRequest();
     telemetryInteractRequest.type = interactType;
@@ -52,7 +54,8 @@ export const generateInteractTelemetry = (interactType, subType, env, pageId,
     return telemetryInteractRequest;
 };
 
-export const generateStartTelemetry = (pageId, objectId,
+export const generateStartTelemetry = (
+    pageId, objectId,
     objectType, objectVersion, rollup: Rollup, corRelationList: Array<CorrelationData>): TelemetryStartRequest => {
     const telemetryStartRequest = new TelemetryStartRequest();
     telemetryStartRequest.type = objectType;

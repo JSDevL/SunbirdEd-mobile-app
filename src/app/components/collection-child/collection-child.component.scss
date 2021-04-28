@@ -5,8 +5,11 @@
     .separator-line {
         height: 1px;
         opacity: 0.36;
-        background-color: #979797;
+        background-color: map-get($colors, dark_gray);
         width: 100%;
+    }
+    .pull-right{
+        float: right !important;
     }
 
     .P10{
@@ -15,25 +18,20 @@
 
     .play-icon
     {
-        color : #00ba75;
+        color : map-get($colors, vivid_green);
         font-size: 30px;
     }
 
     .checkmark-icon
     {
-      color : #00ba75;
+      color : map-get($colors, vivid_green);
       font-size: 18px;
       margin-left: 5px;
     }
 
     .font-grey-text
     {
-      //  padding: 4px;
-        color : #979797;
-    }
-
-    .P10{
-        padding: 10px;
+        color : map-get($colors, dark_gray);
     }
 
     .grey-icon-span
@@ -44,7 +42,7 @@
 
     .grey-icon
     {
-        color : #979797;
+        color : map-get($colors, dark_gray);
         font-size: 18px;
     }
 
@@ -71,8 +69,13 @@
     .content-icon{
         width: 38px;
         height: 38px;
-        border: 0.5px solid #D6D6D6;
-        background-color: #CCCCCC;
+        border: 0.5px solid map-get($colors, medium_light_gray);
+        background-color: map-get($colors, medium_gray);
+        display: inline-block;
+    }
+    .content-name {
+        padding-left: 1em;
+        color: map-get($colors, black);
     }
     .sb-checkmark-icon{
         color : $secondary-200;
@@ -83,4 +86,53 @@
     .clearfix {
         @include clearfix;
     }
+    .sb-collection-child-ftue{
+        padding-left: 8px;
+    }
+    .sb-bold-blue{
+        font-weight: bolder;
+        color: $blue;
+        padding: 8px;
+    }
+    .sb-blue-text{
+        color: $blue;
+    }
+    .sb-highlighted-row{
+        @include padding($base-block-space * 1);
+        display: flex;
+        background-color: lightblue;
+    }
+    .sb-textbook-toc{
+        @include padding($base-block-space * 1);
+        display: flex;
+        color: $blue;
+        @include clearfix;
+    }
+}
+
+.done-pt-8 {
+    padding-top: 8px !important;
+}
+
+.content-playbutton {
+    padding-left: 4px;
+    color: $blue;
+}
+.play-button{
+    --border-color: #{$blue};
+    --border-width: 1px;
+    text-transform: none;
+    height: 3em;
+}
+.image-position{
+    display: inline-block;
+    position: relative;
+    .icon-position {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+    }
+}
+.sub-unit {
+    padding-left: 16px !important;
 }
